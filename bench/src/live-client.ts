@@ -106,7 +106,7 @@ const modelFor = (config: LiveClientConfig, pin: ModelPin): Model<Api> => ({
   cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
   id: pin.model.slice(pin.model.indexOf("/") + 1),
   input: ["text"],
-  maxTokens: 16_384,
+  maxTokens: 131_072,
   name: pin.model,
   provider: config.provider,
   reasoning: true,
