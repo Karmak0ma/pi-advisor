@@ -70,10 +70,53 @@ export const DEFAULT_MODEL_PINS: Record<string, ModelPin> = {
   },
 };
 
+export const DEFAULT_LIVE_PIN_SET = "openai-codex";
+export const PINNED_ZAI_EXECUTOR = "zai/glm-5.3-flash";
+export const PINNED_ZAI_ADVISOR = "zai/glm-5.3";
+
+export const ZAI_MODEL_PINS: Record<string, ModelPin> = {
+  cheapAdvisor: {
+    effort: "high",
+    model: PINNED_ZAI_EXECUTOR,
+    role: "advisor",
+  },
+  decisionAdvisor: {
+    effort: "high",
+    model: PINNED_ZAI_ADVISOR,
+    role: "advisor",
+  },
+  executor: {
+    effort: "max",
+    model: PINNED_ZAI_EXECUTOR,
+    role: "executor",
+  },
+  frontier: {
+    effort: "max",
+    model: PINNED_ZAI_ADVISOR,
+    role: "executor",
+  },
+  frontierMedium: {
+    effort: "high",
+    model: PINNED_ZAI_ADVISOR,
+    role: "executor",
+  },
+  judge: {
+    effort: "high",
+    model: PINNED_ZAI_ADVISOR,
+    role: "judge",
+  },
+};
+
+export const LIVE_PIN_SETS: Record<string, Record<string, ModelPin>> = {
+  [DEFAULT_LIVE_PIN_SET]: DEFAULT_MODEL_PINS,
+  "zai-glm-5.3": ZAI_MODEL_PINS,
+};
+
 export const DEFAULT_CONFIG: BenchmarkConfig = {
   budgetUsd: 25,
   fixtureRoot: "bench/fixtures",
   gateFailureModes: [...GATE_FAILURE_MODES],
+  livePinSet: DEFAULT_LIVE_PIN_SET,
   modelPins: DEFAULT_MODEL_PINS,
   pricing: DEFAULT_PRICING,
   reactBenchCommit: DEFAULT_REACT_BENCH_COMMIT,
@@ -155,6 +198,19 @@ const validateModelPins = (value: unknown): Record<string, ModelPin> => {
   return result;
 };
 
+const validateLivePinSet = (value: unknown): string => {
+  const livePinSet =
+    (isRecord(value) && typeof value.livePinSet === "string"
+      ? value.livePinSet
+      : undefined) ?? DEFAULT_LIVE_PIN_SET;
+  if (!Object.hasOwn(LIVE_PIN_SETS, livePinSet)) {
+    throw new TypeError(
+      `livePinSet must name a registered pin set: ${Object.keys(LIVE_PIN_SETS).join(", ")}.`
+    );
+  }
+  return livePinSet;
+};
+
 export const validateBenchmarkConfig = (value: unknown): BenchmarkConfig => {
   if (!isRecord(value)) {
     throw new TypeError("Benchmark config must be an object.");
@@ -187,6 +243,7 @@ export const validateBenchmarkConfig = (value: unknown): BenchmarkConfig => {
   if (value.gateFailureModes.length !== GATE_FAILURE_MODES.length) {
     throw new TypeError("gateFailureModes must cover all three failure modes.");
   }
+  const livePinSet = validateLivePinSet(value);
   const modelPins = validateModelPins(value.modelPins);
   if (typeof value.reactBenchCommit !== "string" || !value.reactBenchCommit) {
     throw new TypeError("reactBenchCommit must be recorded.");
@@ -201,6 +258,7 @@ export const validateBenchmarkConfig = (value: unknown): BenchmarkConfig => {
     budgetUsd: value.budgetUsd,
     fixtureRoot: value.fixtureRoot,
     gateFailureModes: [...value.gateFailureModes] as GateFailureMode[],
+    livePinSet,
     modelPins,
     pricing,
     reactBenchCommit: value.reactBenchCommit,

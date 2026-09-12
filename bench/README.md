@@ -57,6 +57,38 @@ Set `BENCH_SCOUT=1` to run the Scout on/off experiment. `BENCH_PROVIDER` and
 `openai-completions`. Every live request records and verifies its pinned model
 and effort. Missing usage is reported as unavailable, never as zero.
 
+### Live pin sets
+
+Live runs pin a whole model set, not just per-model ids. `config.livePinSet`
+(`"openai-codex"` by default) must name a registered set in
+`bench/src/config.ts`, and the config's `modelPins` must match it exactly —
+unknown set names, extra pins, and drifted model/effort/role values all fail
+closed before any provider call.
+
+Two sets are registered:
+
+- `openai-codex` — `gpt-5.6-luna@max` executor, `gpt-5.6-sol@medium` advisor
+  and judge. The preregistered Tier 3 pair.
+- `zai-glm-5.3` — `glm-5.3-flash@max` executor, `glm-5.3@high` advisor and
+  judge. Exploratory Tier 2 only; Tier 3 rejects it because its
+  preregistration is Codex-specific. Efforts use `high`/`max` because the
+  catalog maps `medium` to no thinking level for these models. Effort is
+  verified from the outbound payload, not from server-side behavior, and the
+  judge shares the headline advisor's model family — both limits are stamped
+  into the report warnings.
+
+A checked-in Z.ai config exists at `bench/benchmark.zai.json`:
+
+```bash
+export BENCH_BASE_URL=https://api.z.ai/api/coding/paas/v4
+export BENCH_API_KEY=replace-with-a-zai-key
+BENCH_LIVE=1 BENCH_PROVIDER=zai bun run bench:decisions \
+  --config bench/benchmark.zai.json
+```
+
+Reports from different pin sets are not comparable; compare numbers only
+within one pin set.
+
 ## Live Tier 3
 
 Tier 3 requires all of the following:

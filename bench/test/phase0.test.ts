@@ -9,6 +9,8 @@ import {
 } from "../src/budget.ts";
 import {
   DEFAULT_CONFIG,
+  DEFAULT_LIVE_PIN_SET,
+  LIVE_PIN_SETS,
   validateBenchmarkConfig,
   validatePricing,
 } from "../src/config.ts";
@@ -154,6 +156,67 @@ describe("benchmark Phase 0 infrastructure", () => {
         },
       })
     ).toThrow("Live model pin executor");
+  });
+
+  test("accepts the registered zai pin set for tier 2 and rejects drift", () => {
+    const zaiConfig = {
+      ...DEFAULT_CONFIG,
+      livePinSet: "zai-glm-5.3",
+      modelPins: LIVE_PIN_SETS["zai-glm-5.3"],
+    };
+    expect(assertPinnedLiveModelConfiguration(zaiConfig)).toBe(true);
+    expect(() =>
+      assertPinnedLiveModelConfiguration(zaiConfig, DEFAULT_LIVE_PIN_SET)
+    ).toThrow("openai-codex/gpt-5.6-luna");
+    expect(() =>
+      assertPinnedLiveModelConfiguration({
+        ...zaiConfig,
+        modelPins: {
+          ...zaiConfig.modelPins,
+          judge: { ...zaiConfig.modelPins.judge, effort: "medium" },
+        },
+      })
+    ).toThrow("Live model pin judge");
+  });
+
+  test("rejects unknown pin sets and pins outside the named set", () => {
+    expect(() =>
+      assertPinnedLiveModelConfiguration({
+        ...DEFAULT_CONFIG,
+        livePinSet: "does-not-exist",
+      })
+    ).toThrow("Unknown live model pin set");
+    expect(() =>
+      assertPinnedLiveModelConfiguration({
+        ...DEFAULT_CONFIG,
+        modelPins: {
+          ...DEFAULT_CONFIG.modelPins,
+          extra: {
+            effort: "high",
+            model: "zai/glm-5.3",
+            role: "advisor",
+          },
+        },
+      })
+    ).toThrow("not part of pin set");
+  });
+
+  test("validates and defaults the live pin set", () => {
+    expect(
+      validateBenchmarkConfig({ ...DEFAULT_CONFIG, livePinSet: undefined })
+        .livePinSet
+    ).toBe(DEFAULT_LIVE_PIN_SET);
+    expect(
+      validateBenchmarkConfig(JSON.parse(JSON.stringify(DEFAULT_CONFIG)))
+        .livePinSet
+    ).toBe(DEFAULT_LIVE_PIN_SET);
+    expect(() =>
+      validateBenchmarkConfig({ ...DEFAULT_CONFIG, livePinSet: "zai-glm-5.2" })
+    ).toThrow("livePinSet must name a registered pin set");
+    expect(
+      validateBenchmarkConfig({ ...DEFAULT_CONFIG, livePinSet: "zai-glm-5.3" })
+        .livePinSet
+    ).toBe("zai-glm-5.3");
   });
 
   test("captures every configured model pin and effort", () => {

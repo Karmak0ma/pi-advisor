@@ -10,6 +10,7 @@ import {
 import {
   armModelPins,
   DEFAULT_CONFIG,
+  DEFAULT_LIVE_PIN_SET,
   defaultPricingFor,
   modelPin,
 } from "./config.ts";
@@ -859,6 +860,12 @@ export const runDecisions = async ({
     warnings: [
       "With 24 items, this tier distinguishes clearly better from clearly worse and nothing finer; ties within one item are reported as ties.",
       "The 24 decision points include three derived items per eight source tasks; rates are item-level diagnostics, not independent source-task evidence.",
+      ...(config.livePinSet !== undefined &&
+      config.livePinSet !== DEFAULT_LIVE_PIN_SET
+        ? [
+            `Pin set ${config.livePinSet}: efforts are verified from the outbound payload only, and the judge shares the headline advisor's model family.`,
+          ]
+        : []),
     ],
   });
   if (writeReportOutput) {

@@ -1,0 +1,56 @@
+{
+  "budgetUsd": 10,
+  "fixtureRoot": "bench/fixtures",
+  "gateFailureModes": ["block-session", "block-tool", "warn-and-continue"],
+  "livePinSet": "zai-glm-5.3",
+  "modelPins": {
+    "executor": {
+      "model": "zai/glm-5.3-flash",
+      "effort": "max",
+      "role": "executor"
+    },
+    "cheapAdvisor": {
+      "model": "zai/glm-5.3-flash",
+      "effort": "high",
+      "role": "advisor"
+    },
+    "decisionAdvisor": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "role": "advisor"
+    },
+    "frontier": {
+      "model": "zai/glm-5.3",
+      "effort": "max",
+      "role": "executor"
+    },
+    "frontierMedium": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "role": "executor"
+    },
+    "judge": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "role": "judge"
+    }
+  },
+  "pricing": {
+    "zai/glm-5.3": {
+      "inputPerMillion": 1.4,
+      "outputPerMillion": 4.4,
+      "cacheReadPerMillion": 0.26,
+      "cacheWritePerMillion": 0
+    },
+    "zai/glm-5.3-flash": {
+      "inputPerMillion": 0.075,
+      "outputPerMillion": 0.25,
+      "cacheReadPerMillion": 0.015,
+      "cacheWritePerMillion": 0
+    }
+  },
+  "reactBenchCommit": "11ff042e60ec83a613053fbd721a54ed4dbfdf6f",
+  "reactDoctorVersion": "pinned-by-reactbench",
+  "reportRoot": "bench/reports",
+  "seed": 1
+}

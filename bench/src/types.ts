@@ -182,6 +182,7 @@ export interface BenchmarkConfig {
   budgetUsd: number;
   fixtureRoot: string;
   gateFailureModes: GateFailureMode[];
+  livePinSet?: string;
   modelPins: Record<string, ModelPin>;
   pricing: Record<string, PricingRates>;
   reactBenchCommit: string;

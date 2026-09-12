@@ -7,7 +7,12 @@ import {
   formatBudgetEstimate,
   validateBudgetPlan,
 } from "./budget.ts";
-import { DEFAULT_CONFIG, defaultPricingFor, modelPin } from "./config.ts";
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_LIVE_PIN_SET,
+  defaultPricingFor,
+  modelPin,
+} from "./config.ts";
 import { defaultControlAdvice, runControls } from "./controls.ts";
 import {
   aggregateEvaluation,
@@ -438,7 +443,8 @@ export const runEvaluation = async ({
     return report;
   }
   requireCommittedPreregistration(PREREG_SECTION_TWO, "Stage 2 evaluation");
-  assertPinnedLiveModelConfiguration(config);
+  // Tier 3 preregistration is measured only on the Codex pin set.
+  assertPinnedLiveModelConfiguration(config, DEFAULT_LIVE_PIN_SET);
   const screening = readScreening(screeningReportPath);
   if (screening.report.pins.reactBenchCommit !== config.reactBenchCommit) {
     throw new Error(

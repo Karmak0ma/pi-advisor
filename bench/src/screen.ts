@@ -6,7 +6,12 @@ import {
   formatBudgetEstimate,
   validateBudgetPlan,
 } from "./budget.ts";
-import { DEFAULT_CONFIG, defaultPricingFor, modelPin } from "./config.ts";
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_LIVE_PIN_SET,
+  defaultPricingFor,
+  modelPin,
+} from "./config.ts";
 import { defaultControlAdvice, runControls } from "./controls.ts";
 import { hashTree } from "./fixture.ts";
 import { createPiAdvisorHarborAdapter } from "./pi-advisor-adapter.ts";
@@ -128,7 +133,8 @@ export const runScreening = async ({
   assertNoSmokeProtocol("Stage 1 screening");
   preregistered();
   validateEvaluationSeeds(SCREENING_SEEDS, EVALUATION_SEEDS);
-  assertPinnedLiveModelConfiguration(config);
+  // Tier 3 preregistration is measured only on the Codex pin set.
+  assertPinnedLiveModelConfiguration(config, DEFAULT_LIVE_PIN_SET);
   let resolvedSourceRoot = sourceRoot ?? process.env.BENCH_REACTBENCH_ROOT;
   let harborRunnerCreated = false;
   if (!runner) {

@@ -13,7 +13,9 @@ of the npm package.
   validates the 24 decision fixtures and null/oracle controls. A live run needs
   `BENCH_BASE_URL`, `BENCH_API_KEY` (or `OPENAI_API_KEY`), non-zero pricing in a
   config file, and `BENCH_LIVE=1`; it is scheduled rather than run on PRs.
-  `BENCH_SCOUT=1` enables the Scout on/off experiment.
+  `BENCH_SCOUT=1` enables the Scout on/off experiment. Live runs must name a
+  registered pin set via `livePinSet` (default `openai-codex`; `zai-glm-5.3` is
+  an exploratory Tier 2-only set). Reports across pin sets are not comparable.
 - **Tier 3 screening:** `BENCH_LIVE=1 bun run bench:screen`. It requires a
   successful Harbor/provider feasibility spike and the local Pi
   `openai-codex` OAuth session. If `BENCH_REACTBENCH_ROOT` and a runner are not

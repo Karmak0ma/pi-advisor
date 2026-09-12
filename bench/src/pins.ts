@@ -2,13 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-  PINNED_ADVISOR,
-  PINNED_ADVISOR_EFFORT,
-  PINNED_EXECUTOR,
-  PINNED_EXECUTOR_EFFORT,
-  PINNED_JUDGE_EFFORT,
-} from "./config.ts";
+import { DEFAULT_LIVE_PIN_SET, LIVE_PIN_SETS } from "./config.ts";
 import type {
   BenchmarkConfig,
   BenchmarkPins,
@@ -80,51 +74,32 @@ export const capturePins = (
 export const modelPinText = (pin: ModelPin) =>
   `${pin.role}=${pin.model}@${pin.effort}`;
 
-const EXPECTED_LIVE_PINS: Record<string, ModelPin> = {
-  cheapAdvisor: {
-    effort: PINNED_ADVISOR_EFFORT,
-    model: PINNED_EXECUTOR,
-    role: "advisor",
-  },
-  decisionAdvisor: {
-    effort: PINNED_ADVISOR_EFFORT,
-    model: PINNED_ADVISOR,
-    role: "advisor",
-  },
-  executor: {
-    effort: PINNED_EXECUTOR_EFFORT,
-    model: PINNED_EXECUTOR,
-    role: "executor",
-  },
-  frontier: {
-    effort: PINNED_EXECUTOR_EFFORT,
-    model: PINNED_ADVISOR,
-    role: "executor",
-  },
-  frontierMedium: {
-    effort: PINNED_ADVISOR_EFFORT,
-    model: PINNED_ADVISOR,
-    role: "executor",
-  },
-  judge: {
-    effort: PINNED_JUDGE_EFFORT,
-    model: PINNED_ADVISOR,
-    role: "judge",
-  },
-};
-
 /** Reject a live config that silently changes the preregistered model pair. */
-export const assertPinnedLiveModelConfiguration = (config: BenchmarkConfig) => {
-  for (const [name, expected] of Object.entries(EXPECTED_LIVE_PINS)) {
+export const assertPinnedLiveModelConfiguration = (
+  config: BenchmarkConfig,
+  setName = config.livePinSet ?? DEFAULT_LIVE_PIN_SET
+) => {
+  const expected = LIVE_PIN_SETS[setName];
+  if (!expected) {
+    throw new Error(`Unknown live model pin set: ${setName}.`);
+  }
+  for (const name of Object.keys(config.modelPins)) {
+    if (!Object.hasOwn(expected, name)) {
+      throw new Error(
+        `Live model pin ${name} is not part of pin set ${setName}.`
+      );
+    }
+  }
+  for (const [name, pin] of Object.entries(expected)) {
     const actual = config.modelPins[name];
     if (
       !actual ||
-      actual.role !== expected.role ||
-      actual.model !== expected.model ||
-      actual.effort !== expected.effort
+      actual.role !== pin.role ||
+      actual.model !== pin.model ||
+      actual.effort !== pin.effort
     ) {
       throw new Error(
-        `Live model pin ${name} must remain ${modelPinText(expected)}.`
+        `Live model pin ${name} must remain ${modelPinText(pin)}.`
       );
     }
   }
