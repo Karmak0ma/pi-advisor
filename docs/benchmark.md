@@ -16,6 +16,8 @@ of the npm package.
   `BENCH_SCOUT=1` enables the Scout on/off experiment. Live runs must name a
   registered pin set via `livePinSet` (default `openai-codex`; `zai-glm-5.3` is
   an exploratory Tier 2-only set). Reports across pin sets are not comparable.
+  Empty Advisor responses are retried once, then excluded from quality
+  denominators with per-arm coverage; a live arm under 80% usable is INVALID.
 - **Tier 3 screening:** `BENCH_LIVE=1 bun run bench:screen`. It requires a
   successful Harbor/provider feasibility spike and the local Pi
   `openai-codex` OAuth session. If `BENCH_REACTBENCH_ROOT` and a runner are not

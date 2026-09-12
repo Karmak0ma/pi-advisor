@@ -46,6 +46,8 @@ const LIVE_JUDGE_CALLS = DECISION_ITEM_COUNT * DECISION_REPEATS * 4;
 const SCOUT_SAMPLE_COUNT = DECISION_ITEM_COUNT * DECISION_REPEATS;
 const SCOUT_EXTRA_CALLS = SCOUT_SAMPLE_COUNT * 3;
 const DEFAULT_TOKEN_ASSUMPTION = { input: 4000, output: 1000 };
+// Preregistered: a live arm with a lower usable-response rate is INVALID.
+const MIN_LIVE_USABLE_RATE = 0.8;
 
 const liveArms = ["cheap", "frontier"] as const;
 const allArms = ["null", "cheap", "frontier", "oracle"] as const;
@@ -133,10 +135,13 @@ const deterministicJudge = async ({
 
 const summaryFor = (
   arm: DecisionArm,
-  observations: Observation[],
+  allObservations: Observation[],
   cost: number | "unavailable",
   repeats: number
 ) => {
+  const observations = allObservations.filter(
+    (observation) => observation.score.excluded !== "unusable-advice"
+  );
   const positiveObservations = observations.filter(
     (observation) => observation.item.polarity === "positive"
   );
@@ -195,6 +200,12 @@ const summaryFor = (
     catch_rate: catchRate,
     catchRate,
     caught,
+    coverage_total: allObservations.length,
+    coverage_unusable: allObservations.length - observations.length,
+    coverage_usable: observations.length,
+    coverageUsableRate: allObservations.length
+      ? observations.length / allObservations.length
+      : 0,
     false_alarm_rate: falseAlarmRate,
     falseAlarmRate,
     J: catchRate - falseAlarmRate,
@@ -211,6 +222,18 @@ const summaryFor = (
     usd_per_catch: usdPerCatch,
     usdPerCatch,
   };
+};
+
+const ADVISOR_SYSTEM_PROMPT =
+  "You are the Advisor in a benchmark. You have no tools and no filesystem access; do not attempt to inspect files or run commands. Review only the supplied evidence and produce the complete advice now as concise Markdown.";
+const JUDGE_SYSTEM_PROMPT =
+  "You are a narrow, deterministic benchmark judge. You have no tools and no filesystem access; judge only the supplied material. Follow the requested JSON output exactly.";
+const SCOUT_SYSTEM_PROMPT =
+  "You are a benchmark Scout. You have no tools and no filesystem access; select the smallest relevant evidence from the supplied review context only.";
+const ROLE_SYSTEM_PROMPTS = {
+  advisor: ADVISOR_SYSTEM_PROMPT,
+  executor: SCOUT_SYSTEM_PROMPT,
+  judge: JUDGE_SYSTEM_PROMPT,
 };
 
 const deterministicObservations = async (
@@ -250,23 +273,23 @@ const liveObservations = async (
     (arm: DecisionArm): JudgeInvoker =>
     async ({ item, advice, pin }) => {
       const prompt = buildJudgePrompt(item, advice);
-      const estimate = estimateCost(
-        1,
-        defaultPricingFor(config, pin.model) ?? {
-          cacheReadPerMillion: 0,
-          cacheWritePerMillion: 0,
-          inputPerMillion: 0,
-          outputPerMillion: 0,
-        },
-        tokenAssumption
+      const reserved = budget.reserve(
+        estimateCost(
+          2,
+          defaultPricingFor(config, pin.model) ?? {
+            cacheReadPerMillion: 0,
+            cacheWritePerMillion: 0,
+            inputPerMillion: 0,
+            outputPerMillion: 0,
+          },
+          tokenAssumption
+        )
       );
-      const reserved = budget.reserve(estimate);
       const response = await client.text({
         pin,
         prompt,
         signal: undefined,
-        systemPrompt:
-          "You are a narrow, deterministic benchmark judge. Follow the requested JSON output exactly.",
+        systemPrompt: JUDGE_SYSTEM_PROMPT,
       });
       const pricing = defaultPricingFor(config, pin.model) ?? {
         cacheReadPerMillion: 0,
@@ -278,6 +301,11 @@ const liveObservations = async (
       meter.record("judge", pin.model, response.usage, pricing);
       const actual = configuredCost(normalizeUsage(response.usage), pricing);
       budget.settle(reserved, actual === "unavailable" ? undefined : actual);
+      if (!response.text.trim()) {
+        throw new Error(
+          `Live judge returned no usable text after ${response.attempts} attempts (stop reason: ${response.firstEmpty?.stopReason ?? "unknown"}; parts: ${response.firstEmpty?.partTypes ?? "unknown"}).`
+        );
+      }
       return {
         ...response,
         effort: pin.effort,
@@ -293,6 +321,12 @@ const liveObservations = async (
         let advice: string;
         let advisorLatencyMs: number | undefined;
         let usage: unknown;
+        let unusable:
+          | {
+              attempts: number;
+              firstEmpty?: { partTypes: string; stopReason: string | null };
+            }
+          | undefined;
         if (arm === "null") {
           advice = defaultControlAdvice("null", item);
         } else if (arm === "oracle") {
@@ -303,7 +337,7 @@ const liveObservations = async (
             throw new Error(`Missing Advisor pin for ${arm}.`);
           }
           const estimate = estimateCost(
-            1,
+            2,
             defaultPricingFor(config, pins.advisor.model) ?? {
               cacheReadPerMillion: 0,
               cacheWritePerMillion: 0,
@@ -316,10 +350,15 @@ const liveObservations = async (
           const response = await client.text({
             pin: pins.advisor,
             prompt,
-            systemPrompt:
-              "You are the Advisor in a benchmark. Give concise, evidence-based Markdown advice.",
+            systemPrompt: ADVISOR_SYSTEM_PROMPT,
           });
           ({ latencyMs: advisorLatencyMs, text: advice, usage } = response);
+          if (!advice.trim()) {
+            unusable = {
+              attempts: response.attempts,
+              firstEmpty: response.firstEmpty,
+            };
+          }
           const { advisor: meter } = metersFor(costByArm, arm);
           meter.record(
             "advisor",
@@ -346,13 +385,25 @@ const liveObservations = async (
             actual === "unavailable" ? undefined : actual
           );
         }
-        const score = await scoreAdvice({
-          advice,
-          arm,
-          item,
-          judge: judgeFor(arm),
-          judgePin,
-        });
+        const score = unusable
+          ? {
+              arm,
+              caught: false,
+              excluded: "unusable-advice" as const,
+              falseAlarm: false,
+              itemId: item.id,
+              judge: null,
+              judgeAvailable: false,
+              justification: `Advisor returned no usable text after ${unusable.attempts} attempts (stop: ${unusable.firstEmpty?.stopReason ?? "unknown"}; parts: ${unusable.firstEmpty?.partTypes ?? "unknown"}); excluded from quality denominators.`,
+              mechanical: null,
+            }
+          : await scoreAdvice({
+              advice,
+              arm,
+              item,
+              judge: judgeFor(arm),
+              judgePin,
+            });
         observations.push({
           advice,
           advisorLatencyMs,
@@ -439,18 +490,20 @@ const runScoutComparison = async (
     role: "executor" | "advisor" | "judge"
   ) => {
     const pricing = pricingFor(pin);
-    const reserved = budget.reserve(estimateCost(1, pricing, tokenAssumption));
+    const reserved = budget.reserve(estimateCost(2, pricing, tokenAssumption));
     const response = await client.text({
       pin,
       prompt,
-      systemPrompt:
-        role === "judge"
-          ? "You are a narrow, deterministic benchmark judge. Follow the requested JSON output exactly."
-          : "You are a benchmark model. Return concise evidence-based text.",
+      systemPrompt: ROLE_SYSTEM_PROMPTS[role],
     });
     meter.record(role, pin.model, response.usage, pricing);
     const actual = configuredCost(normalizeUsage(response.usage), pricing);
     budget.settle(reserved, actual === "unavailable" ? undefined : actual);
+    if (role === "judge" && !response.text.trim()) {
+      throw new Error(
+        `Live judge returned no usable text after ${response.attempts} attempts.`
+      );
+    }
     return response;
   };
   const judge = async ({ item, advice, pin }: Parameters<JudgeInvoker>[0]) => {
@@ -480,17 +533,31 @@ const runScoutComparison = async (
       );
       const advisor = await call(
         frontierPin,
-        `${prompt}\n\nUntrusted Scout selection:\n${scout.text}`,
+        scout.text.trim()
+          ? `${prompt}\n\nUntrusted Scout selection:\n${scout.text}`
+          : prompt,
         advisorMeter,
         "advisor"
       );
-      const score = await scoreAdvice({
-        advice: advisor.text,
-        arm: "frontier",
-        item,
-        judge,
-        judgePin,
-      });
+      const score = advisor.text.trim()
+        ? await scoreAdvice({
+            advice: advisor.text,
+            arm: "frontier",
+            item,
+            judge,
+            judgePin,
+          })
+        : {
+            arm: "frontier" as const,
+            caught: false,
+            excluded: "unusable-advice" as const,
+            falseAlarm: false,
+            itemId: item.id,
+            judge: null,
+            judgeAvailable: false,
+            justification: `Advisor (Scout arm) returned no usable text after ${advisor.attempts} attempts; excluded from quality denominators.`,
+            mechanical: null,
+          };
       on.push({
         advice: advisor.text,
         advisorLatencyMs: advisor.latencyMs,
@@ -628,8 +695,15 @@ const decisionBudget = (config: BenchmarkConfig, includeScout: boolean) => {
   const judgeCalls = LIVE_JUDGE_CALLS;
   const scoutCalls = includeScout ? DECISION_ITEM_COUNT * DECISION_REPEATS : 0;
   const extraFrontierCalls = scoutCalls;
+  // Every live call may retry once on an empty response.
+  const retryBudgetFactor = 2;
   const calls =
-    cheapCalls + frontierCalls + judgeCalls + scoutCalls + extraFrontierCalls;
+    (cheapCalls +
+      frontierCalls +
+      judgeCalls +
+      scoutCalls +
+      extraFrontierCalls) *
+    retryBudgetFactor;
   const price = (pin: ModelPin) => defaultPricingFor(config, pin.model);
   const cheapPricing = price(modelPin(config, "cheapAdvisor", "advisor"));
   const frontierPricing = price(modelPin(config, "decisionAdvisor", "advisor"));
@@ -637,24 +711,32 @@ const decisionBudget = (config: BenchmarkConfig, includeScout: boolean) => {
   const scoutPricing = price(modelPin(config, "executor", "executor"));
   const estimatedUsd =
     (cheapPricing
-      ? estimateCost(cheapCalls, cheapPricing, tokenAssumption)
+      ? estimateCost(
+          cheapCalls * retryBudgetFactor,
+          cheapPricing,
+          tokenAssumption
+        )
       : 0) +
     (frontierPricing
       ? estimateCost(
-          frontierCalls + extraFrontierCalls,
+          (frontierCalls + extraFrontierCalls) * retryBudgetFactor,
           frontierPricing,
           tokenAssumption
         )
       : 0) +
     (judgePricing
       ? estimateCost(
-          judgeCalls + (includeScout ? scoutCalls : 0),
+          (judgeCalls + (includeScout ? scoutCalls : 0)) * retryBudgetFactor,
           judgePricing,
           tokenAssumption
         )
       : 0) +
     (includeScout && scoutPricing
-      ? estimateCost(scoutCalls, scoutPricing, tokenAssumption)
+      ? estimateCost(
+          scoutCalls * retryBudgetFactor,
+          scoutPricing,
+          tokenAssumption
+        )
       : 0);
   return {
     calls,
@@ -802,6 +884,18 @@ export const runDecisions = async ({
     costByArm
   );
   const controls = controlsFrom(observations, items);
+  const liveCoverageInvalid = liveArms.some((arm) => {
+    const armObservations = observations.filter(
+      (observation) => observation.arm === arm
+    );
+    const usable = armObservations.filter(
+      (observation) => observation.score.excluded !== "unusable-advice"
+    ).length;
+    return (
+      armObservations.length > 0 &&
+      usable / armObservations.length < MIN_LIVE_USABLE_RATE
+    );
+  });
   const scout = includeScout
     ? await runScoutComparison(
         items,
@@ -856,14 +950,15 @@ export const runDecisions = async ({
       repeats: DECISION_REPEATS,
     },
     generatedAt: reportTimestamp,
-    status: controls.invalid ? "INVALID" : "PASS",
+    status: controls.invalid || liveCoverageInvalid ? "INVALID" : "PASS",
     warnings: [
       "With 24 items, this tier distinguishes clearly better from clearly worse and nothing finer; ties within one item are reported as ties.",
       "The 24 decision points include three derived items per eight source tasks; rates are item-level diagnostics, not independent source-task evidence.",
+      "Advisor responses with no usable text are retried once and then excluded from quality denominators; coverage is reported per arm and a live arm below 80% usable is INVALID.",
       ...(config.livePinSet !== undefined &&
       config.livePinSet !== DEFAULT_LIVE_PIN_SET
         ? [
-            `Pin set ${config.livePinSet}: efforts are verified from the outbound payload only, and the judge shares the headline advisor's model family.`,
+            `Pin set ${config.livePinSet}: advice is elicited under an explicit no-tools instruction through the Z.ai coding-plan endpoint, whose models are tool-tuned; efforts are verified from the outbound payload only, and the judge shares the headline advisor's model family.`,
           ]
         : []),
     ],

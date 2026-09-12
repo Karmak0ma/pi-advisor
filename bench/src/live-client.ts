@@ -66,7 +66,14 @@ export interface LiveTextRequest {
   systemPrompt: string;
 }
 
+export interface EmptyResponseEvidence {
+  partTypes: string;
+  stopReason: string | null;
+}
+
 export interface LiveTextResult {
+  attempts: number;
+  firstEmpty?: EmptyResponseEvidence;
   latencyMs: number;
   request: RecordedProviderRequest;
   text: string;
@@ -98,15 +105,33 @@ const effortFromPayload = (payload: Record<string, unknown>) => {
   }
 };
 
+const ROLE_MAX_TOKENS: Record<string, number> = {
+  advisor: 32_768,
+  executor: 32_768,
+  judge: 16_384,
+};
+
+const compatFor = (provider: string) =>
+  provider === "zai"
+    ? {
+        maxTokensField: "max_tokens" as const,
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: true,
+        supportsStore: false,
+        thinkingFormat: "zai" as const,
+        zaiToolStream: true,
+      }
+    : { supportsReasoningEffort: true };
+
 const modelFor = (config: LiveClientConfig, pin: ModelPin): Model<Api> => ({
   api: config.api,
   baseUrl: config.baseUrl,
-  compat: { supportsReasoningEffort: true },
+  compat: compatFor(config.provider),
   contextWindow: 1_000_000,
   cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
   id: pin.model.slice(pin.model.indexOf("/") + 1),
   input: ["text"],
-  maxTokens: 131_072,
+  maxTokens: ROLE_MAX_TOKENS[pin.role] ?? 16_384,
   name: pin.model,
   provider: config.provider,
   reasoning: true,
@@ -130,53 +155,78 @@ export class LiveModelClient {
   }
 
   async text({ pin, prompt, signal, systemPrompt }: LiveTextRequest) {
-    const model = modelFor(this.#config, pin);
-    const messages: Message[] = [
-      {
-        content: [{ text: prompt, type: "text" }],
-        role: "user",
-        timestamp: Date.now(),
-      },
-    ];
-    let recorded: RecordedProviderRequest | undefined;
-    const started = performance.now();
-    const eventStream = stream(model, { messages, systemPrompt }, {
-      apiKey: this.#config.apiKey,
-      maxRetries: 0,
-      onPayload: (payload: unknown, actualModel: Model<Api>) => {
-        const body = isRecord(payload) ? payload : {};
-        const actualEffort = effortFromPayload(body);
-        recorded = {
-          effort: actualEffort,
-          model: actualModel.id,
-          provider: actualModel.provider,
-          reasoning: actualEffort,
-          role: pin.role,
-        };
-        assertRecordedRequestPin(recorded, pin);
-        return payload;
-      },
-      reasoningEffort: pin.effort,
-      signal,
-      timeoutMs: this.#config.timeoutMs,
-    } as never);
-    const response = await eventStream.result();
-    const assistant = [response].find(
-      (message): message is AssistantMessage => message.role === "assistant"
-    );
-    const text = assistant ? textFromAssistant(assistant) : "";
-    if (!recorded) {
-      throw new Error(`No serialized request was recorded for ${pin.role}.`);
+    const attempt = async () => {
+      const model = modelFor(this.#config, pin);
+      const messages: Message[] = [
+        {
+          content: [{ text: prompt, type: "text" }],
+          role: "user",
+          timestamp: Date.now(),
+        },
+      ];
+      let recorded: RecordedProviderRequest | undefined;
+      const started = performance.now();
+      const eventStream = stream(model, { messages, systemPrompt }, {
+        apiKey: this.#config.apiKey,
+        maxRetries: 0,
+        onPayload: (payload: unknown, actualModel: Model<Api>) => {
+          const body = isRecord(payload) ? payload : {};
+          const actualEffort = effortFromPayload(body);
+          recorded = {
+            effort: actualEffort,
+            model: actualModel.id,
+            provider: actualModel.provider,
+            reasoning: actualEffort,
+            role: pin.role,
+          };
+          assertRecordedRequestPin(recorded, pin);
+          return payload;
+        },
+        reasoningEffort: pin.effort,
+        signal,
+        timeoutMs: this.#config.timeoutMs,
+      } as never);
+      const response = await eventStream.result();
+      const assistant = [response].find(
+        (message): message is AssistantMessage => message.role === "assistant"
+      );
+      const text = assistant ? textFromAssistant(assistant) : "";
+      if (!recorded) {
+        throw new Error(`No serialized request was recorded for ${pin.role}.`);
+      }
+      return {
+        evidence: {
+          partTypes: (assistant?.content ?? [])
+            .map((part) => part.type)
+            .join(","),
+          stopReason: assistant?.stopReason ?? null,
+        },
+        latencyMs: Math.max(0, performance.now() - started),
+        request: recorded,
+        text,
+        usage: assistant?.usage,
+      };
+    };
+    const first = await attempt();
+    if (first.text.trim()) {
+      this.#requests.push(first.request);
+      return {
+        attempts: 1,
+        latencyMs: first.latencyMs,
+        request: first.request,
+        text: first.text,
+        usage: first.usage,
+      } satisfies LiveTextResult;
     }
-    if (!text.trim()) {
-      throw new Error(`Live ${pin.role} model returned no text.`);
-    }
-    this.#requests.push(recorded);
+    const second = await attempt();
+    this.#requests.push(first.request, second.request);
     return {
-      latencyMs: Math.max(0, performance.now() - started),
-      request: recorded,
-      text,
-      usage: assistant?.usage,
+      attempts: 2,
+      firstEmpty: first.evidence,
+      latencyMs: first.latencyMs + second.latencyMs,
+      request: second.request,
+      text: second.text,
+      usage: second.usage,
     } satisfies LiveTextResult;
   }
 }

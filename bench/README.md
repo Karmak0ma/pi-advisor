@@ -89,6 +89,18 @@ BENCH_LIVE=1 BENCH_PROVIDER=zai bun run bench:decisions \
 Reports from different pin sets are not comparable; compare numbers only
 within one pin set.
 
+### Unusable responses and coverage
+
+Advisor responses with no usable text (for example a tool-call response from
+a tool-tuned endpoint) are retried once. If the retry is also empty, the
+observation is recorded as `excluded: "unusable-advice"` with the stop reason
+and content-part types of the first attempt, and it is removed from the
+catch-rate, false-alarm-rate, and J denominators — an abstention is not a
+neutral answer. Each arm reports usable coverage
+(`coverage_usable`/`coverage_total`), and a live arm below 80% usable is
+reported `INVALID`. Judge responses with no text still fail the run closed.
+Costs, latencies, and budget always include every attempt.
+
 ## Live Tier 3
 
 Tier 3 requires all of the following:

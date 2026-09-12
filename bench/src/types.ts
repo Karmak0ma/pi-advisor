@@ -137,6 +137,7 @@ export interface DecisionItem {
 export interface DecisionScore {
   arm: ArmName;
   caught: boolean;
+  excluded?: "unusable-advice";
   falseAlarm: boolean;
   itemId: string;
   judge?: boolean | null;
