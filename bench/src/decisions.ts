@@ -891,9 +891,19 @@ export const runDecisions = async ({
     const usable = armObservations.filter(
       (observation) => observation.score.excluded !== "unusable-advice"
     ).length;
+    const judgeEligible = armObservations.filter(
+      (observation) =>
+        observation.score.excluded !== "unusable-advice" &&
+        (observation.score.judgeAvailable || observation.score.judgeMalformed)
+    );
+    const judgeMalformed = judgeEligible.filter(
+      (observation) => observation.score.judgeMalformed
+    ).length;
     return (
-      armObservations.length > 0 &&
-      usable / armObservations.length < MIN_LIVE_USABLE_RATE
+      (armObservations.length > 0 &&
+        usable / armObservations.length < MIN_LIVE_USABLE_RATE) ||
+      (judgeEligible.length > 0 &&
+        1 - judgeMalformed / judgeEligible.length < MIN_LIVE_USABLE_RATE)
     );
   });
   const scout = includeScout
@@ -955,6 +965,7 @@ export const runDecisions = async ({
       "With 24 items, this tier distinguishes clearly better from clearly worse and nothing finer; ties within one item are reported as ties.",
       "The 24 decision points include three derived items per eight source tasks; rates are item-level diagnostics, not independent source-task evidence.",
       "Advisor responses with no usable text are retried once and then excluded from quality denominators; coverage is reported per arm and a live arm below 80% usable is INVALID.",
+      "Unparseable judge responses are retried once and then scored judge-unavailable with evidence; a live arm below 80% parseable judge responses is INVALID.",
       ...(config.livePinSet !== undefined &&
       config.livePinSet !== DEFAULT_LIVE_PIN_SET
         ? [

@@ -142,6 +142,7 @@ export interface DecisionScore {
   itemId: string;
   judge?: boolean | null;
   judgeAvailable?: boolean;
+  judgeMalformed?: boolean;
   justification?: string;
   latencyMs?: number;
   mechanical: boolean | null;

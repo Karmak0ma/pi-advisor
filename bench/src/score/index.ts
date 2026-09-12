@@ -42,6 +42,7 @@ export const scoreAdvice = async ({
     ...(judged.justification ? { justification: judged.justification } : {}),
     judge: judged.pass,
     judgeAvailable: judged.available,
+    ...(judged.malformed ? { judgeMalformed: true } : {}),
     mechanical,
     ...(judged.latencyMs === undefined ? {} : { latencyMs: judged.latencyMs }),
     ...(judged.usage === undefined ? {} : { usage: judged.usage }),

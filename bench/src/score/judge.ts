@@ -94,6 +94,7 @@ export interface ScoredJudge {
   available: boolean;
   justification?: string;
   latencyMs?: number;
+  malformed?: boolean;
   pass: boolean | null;
   usage?: unknown;
 }
@@ -105,14 +106,40 @@ export const judgeAdvice = async (
   invoke: JudgeInvoker
 ): Promise<ScoredJudge> => {
   const invocation = await invoke({ advice, item, pin });
-  const parsed = parseJudgeResponse(invocation.text);
-  return {
-    available: true,
-    justification: parsed.justification,
-    latencyMs: invocation.latencyMs,
-    pass: parsed.pass,
-    usage: invocation.usage,
-  };
+  let { latencyMs, usage } = invocation;
+  try {
+    const parsed = parseJudgeResponse(invocation.text);
+    return {
+      available: true,
+      justification: parsed.justification,
+      latencyMs,
+      pass: parsed.pass,
+      usage,
+    };
+  } catch {
+    const retry = await invoke({ advice, item, pin });
+    ({ latencyMs, usage } = retry);
+    latencyMs += invocation.latencyMs;
+    try {
+      const parsed = parseJudgeResponse(retry.text);
+      return {
+        available: true,
+        justification: parsed.justification,
+        latencyMs,
+        pass: parsed.pass,
+        usage,
+      };
+    } catch {
+      return {
+        available: false,
+        justification: `Judge response unparseable after retry: ${JSON.stringify(retry.text.slice(0, 160))}`,
+        latencyMs,
+        malformed: true,
+        pass: null,
+        usage,
+      };
+    }
+  }
 };
 
 /** Adapts the deterministic control rubric to the same judge result shape. */

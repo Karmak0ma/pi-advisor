@@ -98,7 +98,10 @@ and content-part types of the first attempt, and it is removed from the
 catch-rate, false-alarm-rate, and J denominators — an abstention is not a
 neutral answer. Each arm reports usable coverage
 (`coverage_usable`/`coverage_total`), and a live arm below 80% usable is
-reported `INVALID`. Judge responses with no text still fail the run closed.
+reported `INVALID`. Judge responses that do not parse as the required JSON are
+retried once, then scored judge-unavailable with the raw text retained as
+evidence; a live arm below 80% parseable judge responses is also `INVALID`.
+Empty judge responses still fail the run closed.
 Costs, latencies, and budget always include every attempt.
 
 ## Live Tier 3

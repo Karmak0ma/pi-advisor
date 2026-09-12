@@ -8,7 +8,7 @@ import {
 import { runDecisions } from "../src/decisions.ts";
 import { discoverDecisionItems } from "../src/fixture.ts";
 import { MockProviderServer } from "../src/replay/mock-provider.ts";
-import { parseJudgeResponse } from "../src/score/judge.ts";
+import { judgeAdvice, parseJudgeResponse } from "../src/score/judge.ts";
 import { mechanicalScore } from "../src/score/mechanical.ts";
 
 const items = discoverDecisionItems("bench/tasks");
@@ -187,5 +187,62 @@ describe("Tier 2 decision corpus", () => {
     expect(controlJudge(negative, negative.traps[0].tokens.join(" "))).toBe(
       false
     );
+  });
+
+  test("retries an unparseable judge response once, then scores it unavailable", async () => {
+    const [item] = items;
+    const pin = DEFAULT_CONFIG.modelPins.judge;
+    const replies = [
+      {
+        effort: pin.effort,
+        latencyMs: 10,
+        model: pin.model,
+        text: "I think it passes.",
+      },
+      {
+        effort: pin.effort,
+        latencyMs: 20,
+        model: pin.model,
+        text: "not json either",
+      },
+    ];
+    let calls = 0;
+    const invoke = () => {
+      const reply = replies[calls % replies.length];
+      calls += 1;
+      return Promise.resolve(reply);
+    };
+    const degraded = await judgeAdvice(item, "advice", pin, invoke);
+    expect(degraded.available).toBe(false);
+    expect(degraded.malformed).toBe(true);
+    expect(degraded.pass).toBeNull();
+    expect(degraded.justification).toContain("unparseable after retry");
+    expect(degraded.latencyMs).toBe(30);
+    expect(calls).toBe(2);
+
+    let secondCalls = 0;
+    const recoveringInvoke = () => {
+      const first = secondCalls % 2 === 0;
+      secondCalls += 1;
+      return Promise.resolve(
+        first
+          ? {
+              effort: pin.effort,
+              latencyMs: 5,
+              model: pin.model,
+              text: "prose then",
+            }
+          : {
+              effort: pin.effort,
+              latencyMs: 7,
+              model: pin.model,
+              text: '{"pass":true,"justification":"recovered"}',
+            }
+      );
+    };
+    const recovering = await judgeAdvice(item, "advice", pin, recoveringInvoke);
+    expect(recovering.available).toBe(true);
+    expect(recovering.pass).toBe(true);
+    expect(recovering.latencyMs).toBe(12);
   });
 });
