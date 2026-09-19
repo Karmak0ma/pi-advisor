@@ -1,7 +1,11 @@
 import type { EntryType, Fetch, Questions } from "@typesafe-ai/sdk";
-import { advisorJevPricePerMtokRef } from "../config/state.ts";
+import {
+  advisorJevModelRef,
+  advisorJevPricePerMtokRef,
+  advisorJevTimeoutMsRef,
+} from "../config/state.ts";
 import { redactSecrets } from "../redaction.ts";
-import type { JevTransportKind } from "./transport.ts";
+import type { JevCredentials, JevTransportKind } from "./transport.ts";
 
 export type JevErrorCategory =
   | "auth"
@@ -329,3 +333,16 @@ export class JevClient {
     };
   }
 }
+
+/** A client wired from resolved credentials; reads the live Jev settings per call. */
+export const jevClientFromCredentials = (
+  credentials: JevCredentials,
+  fetch?: Fetch
+): JevClient =>
+  new JevClient({
+    apiKey: credentials.apiKey,
+    fetch,
+    model: advisorJevModelRef,
+    timeoutMs: advisorJevTimeoutMsRef,
+    transport: credentials.transport,
+  });

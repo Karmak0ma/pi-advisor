@@ -7,8 +7,7 @@ import {
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { noul } from "@typesafe-ai/sdk";
-import { advisorJevModelRef, advisorJevTimeoutMsRef } from "../config/state.ts";
-import { JevClient } from "../jev/client.ts";
+import { jevClientFromCredentials } from "../jev/client.ts";
 import {
   clearKeyTypeSafeKey,
   consumePlaintextKeyWarning,
@@ -66,12 +65,7 @@ const transportLabel = (credentials: JevCredentials): string => {
 };
 
 const defaultVerify = async (credentials: JevCredentials) => {
-  const client = new JevClient({
-    apiKey: credentials.apiKey,
-    model: advisorJevModelRef,
-    timeoutMs: advisorJevTimeoutMsRef,
-    transport: credentials.transport,
-  });
+  const client = jevClientFromCredentials(credentials);
   try {
     await client.ask(
       { purpose: "pi-advisor setup verification" },

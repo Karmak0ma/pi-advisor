@@ -72,6 +72,7 @@ const expectedFiles = [
   "src/tools/jev-filter.ts",
   "src/tools/jev-turn-gate.ts",
   "src/tools/loop-gate.ts",
+  "src/tools/outage-notifier.ts",
   "src/tools/prompts.ts",
   "src/tools/register-ask-advisor.ts",
   "src/tools/register-lifecycle.ts",

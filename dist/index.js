@@ -4603,6 +4603,13 @@ class JevClient {
     };
   }
 }
+var jevClientFromCredentials = (credentials, fetch) => new JevClient({
+  apiKey: credentials.apiKey,
+  fetch,
+  model: advisorJevModelRef,
+  timeoutMs: advisorJevTimeoutMsRef,
+  transport: credentials.transport
+});
 
 // src/jev/key-store.ts
 import {
@@ -4882,6 +4889,26 @@ var resolveJevTransport = async (ctx, deps = {}) => {
   return openrouter ? { apiKey: openrouter, transport: "openrouter" } : undefined;
 };
 
+// src/tools/outage-notifier.ts
+var createOutageNotifier = (format) => {
+  let lastKey;
+  return {
+    notify: (ctx, category, message) => {
+      const key = `${category}:${message}`;
+      if (key === lastKey) {
+        return;
+      }
+      lastKey = key;
+      if (ctx.hasUI) {
+        ctx.ui.notify(format(category, message), "warning");
+      }
+    },
+    reset: () => {
+      lastKey = undefined;
+    }
+  };
+};
+
 // src/tools/jev-filter.ts
 var normalizeScreeningQuestion = (question) => question?.trim().toLowerCase().replace(/\s+/g, " ") || undefined;
 var REATTACHED_ADVICE_CAP_BYTES = 4 * 1024;
@@ -4889,17 +4916,9 @@ var SCREENED_SKIP_TEXT = "Advisor consultation skipped (screened out): the stake
 var repeatSkipText = (advice) => `Advisor consultation skipped (already answered): this question was answered earlier in this session; the earlier advice is reattached below. Consult again only if the situation has materially changed.
 
 ${advice}`;
-var lastNotifiedOutage;
-var notifyOutageOnce = (ctx, category, message) => {
-  const key = `${category}:${message}`;
-  if (key === lastNotifiedOutage) {
-    return;
-  }
-  lastNotifiedOutage = key;
-  if (ctx.hasUI) {
-    ctx.ui.notify(`Advisor Jev filter failed (${category}); allowing consultations. ${message}`, "warning");
-  }
-};
+var outageNotifier = createOutageNotifier((category, message) => `Advisor Jev filter failed (${category}); allowing consultations. ${message}`);
+var notifyOutageOnce = outageNotifier.notify;
+var resetJevOutageNotification = outageNotifier.reset;
 var allow = () => ({ decision: "allow" });
 var screenConsultation = (ctx, session, options, deps = {}) => {
   if (isSimpleMode()) {
@@ -4952,13 +4971,7 @@ var screenWithJev = async (ctx, session, options, deps, normalizedQuestion) => {
       ctx.ui.notify(warning, "warning");
     }
   }
-  const client = new JevClient({
-    apiKey: credentials.apiKey,
-    ...deps.fetch ? { fetch: deps.fetch } : {},
-    model: advisorJevModelRef,
-    timeoutMs: advisorJevTimeoutMsRef,
-    transport: credentials.transport
-  });
+  const client = jevClientFromCredentials(credentials, deps.fetch);
   try {
     const result = await client.ask(buildJevState(ctx, options), screeningQuestions, options.signal);
     session.recordJevFilterUsage(result.usage);
@@ -5482,12 +5495,7 @@ var transportLabel = (credentials) => {
   }
 };
 var defaultVerify = async (credentials) => {
-  const client = new JevClient({
-    apiKey: credentials.apiKey,
-    model: advisorJevModelRef,
-    timeoutMs: advisorJevTimeoutMsRef,
-    transport: credentials.transport
-  });
+  const client = jevClientFromCredentials(credentials);
   try {
     await client.ask({ purpose: "pi-advisor setup verification" }, { verified: noul("Answer yes.") });
     return { ok: true };
@@ -6644,17 +6652,9 @@ var turnGateQuestion = {
   instructions: "Should a senior engineering advisor be consulted right now, before the executor continues? Judge from `recent_conversation`.",
   type: "noul"
 };
-var lastNotifiedOutage2;
-var notifyFailureOnce = (ctx, category, message) => {
-  const key = `${category}:${message}`;
-  if (key === lastNotifiedOutage2) {
-    return;
-  }
-  lastNotifiedOutage2 = key;
-  if (ctx.hasUI) {
-    ctx.ui.notify(`Advisor Jev turn gate failed (${category}); continuing without a proactive consultation. ${message}`, "warning");
-  }
-};
+var outageNotifier2 = createOutageNotifier((category, message) => `Advisor Jev turn gate failed (${category}); continuing without a proactive consultation. ${message}`);
+var notifyFailureOnce = outageNotifier2.notify;
+var resetJevTurnGateNotification = outageNotifier2.reset;
 var handleJevTurnEnd = async (registration, ctx) => {
   const { session } = registration;
   session.recordCompletedTurn();
@@ -6674,13 +6674,7 @@ var handleJevTurnEnd = async (registration, ctx) => {
       notifyFailureOnce(ctx, "missing-key", "No Jev credentials resolved (no TypeSafe key and no OpenRouter login).");
       return;
     }
-    const client = new JevClient({
-      apiKey: credentials.apiKey,
-      ...deps.fetch ? { fetch: deps.fetch } : {},
-      model: advisorJevModelRef,
-      timeoutMs: advisorJevTimeoutMsRef,
-      transport: credentials.transport
-    });
+    const client = jevClientFromCredentials(credentials, deps.fetch);
     const result = await client.ask(buildJevState(ctx, {}), {
       should_consult: turnGateQuestion
     });

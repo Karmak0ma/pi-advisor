@@ -5,11 +5,9 @@ import {
   advisorJevFilterNoulMarginRef,
   advisorJevFilterOverrideWindowRef,
   advisorJevFilterSkipConfidenceRef,
-  advisorJevModelRef,
-  advisorJevTimeoutMsRef,
   isSimpleMode,
 } from "../config/state.ts";
-import { JevClient, JevFailure } from "../jev/client.ts";
+import { JevFailure, jevClientFromCredentials } from "../jev/client.ts";
 import { consumePlaintextKeyWarning } from "../jev/key-store.ts";
 import {
   composeScreeningVerdict,
@@ -18,6 +16,7 @@ import {
 import { buildJevState } from "../jev/state.ts";
 import { type JevCredentials, resolveJevTransport } from "../jev/transport.ts";
 import type { AdvisorSessionState } from "../session-state.ts";
+import { createOutageNotifier } from "./outage-notifier.ts";
 
 export type JevSkipKind = "screened" | "repeat";
 
@@ -53,30 +52,15 @@ const SCREENED_SKIP_TEXT =
 const repeatSkipText = (advice: string) =>
   `Advisor consultation skipped (already answered): this question was answered earlier in this session; the earlier advice is reattached below. Consult again only if the situation has materially changed.\n\n${advice}`;
 
-let lastNotifiedOutage: string | undefined;
+const outageNotifier = createOutageNotifier(
+  (category, message) =>
+    `Advisor Jev filter failed (${category}); allowing consultations. ${message}`
+);
 
-const notifyOutageOnce = (
-  ctx: ExtensionContext,
-  category: string,
-  message: string
-) => {
-  const key = `${category}:${message}`;
-  if (key === lastNotifiedOutage) {
-    return;
-  }
-  lastNotifiedOutage = key;
-  if (ctx.hasUI) {
-    ctx.ui.notify(
-      `Advisor Jev filter failed (${category}); allowing consultations. ${message}`,
-      "warning"
-    );
-  }
-};
+const notifyOutageOnce = outageNotifier.notify;
 
 /** Test-only: re-arms the once-per-outage notification. */
-export const resetJevOutageNotification = () => {
-  lastNotifiedOutage = undefined;
-};
+export const resetJevOutageNotification = outageNotifier.reset;
 
 const allow = (): ScreeningOutcome => ({ decision: "allow" });
 
@@ -170,13 +154,7 @@ const screenWithJev = async (
     }
   }
 
-  const client = new JevClient({
-    apiKey: credentials.apiKey,
-    ...(deps.fetch ? { fetch: deps.fetch } : {}),
-    model: advisorJevModelRef,
-    timeoutMs: advisorJevTimeoutMsRef,
-    transport: credentials.transport,
-  });
+  const client = jevClientFromCredentials(credentials, deps.fetch);
   try {
     const result = await client.ask(
       buildJevState(ctx, options),

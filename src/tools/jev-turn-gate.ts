@@ -1,15 +1,13 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Fetch } from "@typesafe-ai/sdk";
 import {
-  advisorJevModelRef,
-  advisorJevTimeoutMsRef,
   advisorJevTurnGateEveryTurnsRef,
   advisorJevTurnGateNoulThresholdRef,
   getAdvisorMaxCallsPerSession,
   isSimpleMode,
 } from "../config/state.ts";
 import { herdrAdvisorActivity } from "../herdr.ts";
-import { JevClient, JevFailure } from "../jev/client.ts";
+import { JevFailure, jevClientFromCredentials } from "../jev/client.ts";
 import { composeTurnGateVerdict } from "../jev/questions.ts";
 import { buildJevState } from "../jev/state.ts";
 import { type JevCredentials, resolveJevTransport } from "../jev/transport.ts";
@@ -17,6 +15,7 @@ import type { AdvisorSessionState } from "../session-state.ts";
 import { advisorUsageCost } from "../usage.ts";
 import type { consultAdvisor } from "./consultation.ts";
 import { updateAdvisorUsageStatus } from "./gate-policy.ts";
+import { createOutageNotifier } from "./outage-notifier.ts";
 
 export const turnGateQuestion = {
   criteria: {
@@ -48,30 +47,15 @@ export interface JevTurnGateRegistration {
   session: AdvisorSessionState;
 }
 
-let lastNotifiedOutage: string | undefined;
+const outageNotifier = createOutageNotifier(
+  (category, message) =>
+    `Advisor Jev turn gate failed (${category}); continuing without a proactive consultation. ${message}`
+);
 
-const notifyFailureOnce = (
-  ctx: ExtensionContext,
-  category: string,
-  message: string
-) => {
-  const key = `${category}:${message}`;
-  if (key === lastNotifiedOutage) {
-    return;
-  }
-  lastNotifiedOutage = key;
-  if (ctx.hasUI) {
-    ctx.ui.notify(
-      `Advisor Jev turn gate failed (${category}); continuing without a proactive consultation. ${message}`,
-      "warning"
-    );
-  }
-};
+const notifyFailureOnce = outageNotifier.notify;
 
 /** Test-only: re-arms the once-per-outage notification. */
-export const resetJevTurnGateNotification = () => {
-  lastNotifiedOutage = undefined;
-};
+export const resetJevTurnGateNotification = outageNotifier.reset;
 
 /**
  * turn_end handler: counts turns without a consultation and, every Nth such
@@ -117,13 +101,7 @@ export const handleJevTurnEnd = async (
       );
       return;
     }
-    const client = new JevClient({
-      apiKey: credentials.apiKey,
-      ...(deps.fetch ? { fetch: deps.fetch } : {}),
-      model: advisorJevModelRef,
-      timeoutMs: advisorJevTimeoutMsRef,
-      transport: credentials.transport,
-    });
+    const client = jevClientFromCredentials(credentials, deps.fetch);
     const result = await client.ask(buildJevState(ctx, {}), {
       should_consult: turnGateQuestion,
     });
