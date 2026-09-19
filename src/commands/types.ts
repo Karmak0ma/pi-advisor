@@ -16,6 +16,7 @@ export type ManualConsult = (
   onScout?: (event: ScoutLifecycleEvent) => void,
   gitContext?: GitContextLevel
 ) => Promise<{
+  adviceId?: string;
   markdown: string;
   thinkingText: string;
   draftBytes?: number;
