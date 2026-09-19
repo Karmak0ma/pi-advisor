@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## Unreleased
+
+### Changed
+
+- Updated development tooling dependencies (ultracite 7.12.0, Biome 2.5.13, knip 6.37.0, lint-staged 17.5.1, typebox 1.3.34, @types/node 26.6.2, bun-types 1.4.2); no runtime dependencies changed. Biome is held at 2.5.13 because 2.5.14's `noUnnecessaryConditions` regression falsely flags the gate parsers' required `RegExp.exec` null-guards as dead code.
+
 ## 0.6.0 - 2026-09-12
 
 ### Fixed
