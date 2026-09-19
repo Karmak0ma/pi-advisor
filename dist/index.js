@@ -3753,7 +3753,10 @@ class AdvisorSessionState {
     const { filter, gate, usage } = this.#jev;
     if (this.#jevFilterActive()) {
       lines.push(this.#filterLine(filter));
-      lines.push(`Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`);
+      const jevTokens = usage.inputTokens + usage.outputTokens;
+      if (jevTokens > 0) {
+        lines.push(`Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`);
+      }
       if (filter.skipped > 0) {
         lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
       }
@@ -4888,7 +4891,7 @@ var notifyOutageOnce = (ctx, category, message) => {
 };
 var allow = () => ({ decision: "allow" });
 var screenConsultation = (ctx, session, options, deps = {}) => {
-  if (!advisorJevFilterEnabledRef || isSimpleMode()) {
+  if (isSimpleMode()) {
     return Promise.resolve(allow());
   }
   const normalizedQuestion = normalizeScreeningQuestion(options.question);
@@ -4905,6 +4908,9 @@ var screenConsultation = (ctx, session, options, deps = {}) => {
       reason: "already answered earlier in this session",
       reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES)
     });
+  }
+  if (!advisorJevFilterEnabledRef) {
+    return Promise.resolve(allow());
   }
   return screenWithJev(ctx, session, options, deps, normalizedQuestion);
 };

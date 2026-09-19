@@ -527,9 +527,12 @@ export class AdvisorSessionState {
     const { filter, gate, usage } = this.#jev;
     if (this.#jevFilterActive()) {
       lines.push(this.#filterLine(filter));
-      lines.push(
-        `Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`
-      );
+      const jevTokens = usage.inputTokens + usage.outputTokens;
+      if (jevTokens > 0) {
+        lines.push(
+          `Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`
+        );
+      }
       if (filter.skipped > 0) {
         lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
       }

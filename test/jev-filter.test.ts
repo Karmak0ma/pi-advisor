@@ -74,6 +74,40 @@ describe("screenConsultation", () => {
     expect(session.summary(undefined)).toBeUndefined();
   });
 
+  test("repeat reattachment works with the Jev filter disabled", async () => {
+    setAdvisorJevFilterEnabledRef(false);
+    const session = new AdvisorSessionState();
+    session.issueAdvice(
+      "advice-1",
+      "Use the migration plan from earlier.",
+      "executor-requested",
+      false,
+      "ship it?"
+    );
+    let calls = 0;
+    const outcome = await screenConsultation(
+      ctxWith(),
+      session,
+      { question: "Ship it?" },
+      {
+        fetch: (input: string, init?: RequestInit) => {
+          calls += 1;
+          return systemOneMock([]).fetch(input, init);
+        },
+        resolveTransport: () => Promise.resolve(credentials),
+      }
+    );
+    expect(calls).toBe(0);
+    expect(outcome.decision).toBe("skip");
+    if (outcome.decision === "skip") {
+      expect(outcome.kind).toBe("repeat");
+      expect(outcome.reattachedAdvice).toContain("migration plan");
+    }
+    const summary = session.summary(undefined) ?? "";
+    expect(summary).toContain("1 skipped [1 repeat]");
+    expect(summary).not.toContain("Jev cost");
+  });
+
   test("allows on confident negligible stakes AND self-answerable only otherwise skips", async () => {
     const session = new AdvisorSessionState();
     const allowMock = systemOneMock([verdictResponse(0.2, 0.9)]);

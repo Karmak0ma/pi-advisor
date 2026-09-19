@@ -92,9 +92,12 @@ export const screenConsultation = (
   options: ScreenConsultationOptions,
   deps: ScreeningDeps = {}
 ): Promise<ScreeningOutcome> => {
-  if (!advisorJevFilterEnabledRef || isSimpleMode()) {
+  if (isSimpleMode()) {
     return Promise.resolve(allow());
   }
+  // Repeat reattachment and its force/passthrough escape hatch are code-side
+  // and free: they run regardless of the Jev enable flag, which only gates
+  // the (paid, network) Jev screening call.
   const normalizedQuestion = normalizeScreeningQuestion(options.question);
   const bypass = bypassOutcome(session, options, normalizedQuestion);
   if (bypass) {
@@ -109,6 +112,9 @@ export const screenConsultation = (
       reason: "already answered earlier in this session",
       reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES),
     });
+  }
+  if (!advisorJevFilterEnabledRef) {
+    return Promise.resolve(allow());
   }
   return screenWithJev(ctx, session, options, deps, normalizedQuestion);
 };
