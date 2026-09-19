@@ -52,6 +52,16 @@ The Scout call creates separate provider usage and cost. Its metrics are local a
 
 When enabled, `~/.pi/agent/advisor-outcomes.jsonl` stores bounded, rotating JSONL records containing only a version, timestamp, salted truncated advice digest, trigger, adoption, and validation status. It stores no prompt, advice, paths, tool output, repository data, session ID, or advice ID.
 
+## TypeSafe Jev screening and the turn gate
+
+The optional Jev integration (`advisorJevFilterEnabled`, `advisorJevTurnGateEveryTurns`; both off by default) sends a bounded screening request to TypeSafe's Jev model — directly (`api.typesafe.ai`) or through the OpenRouter Decisions API when an OpenRouter login is configured in Pi.
+
+The Jev `state` contains four named fields and nothing else: a `role` marker, the Executor's `question` and `draft` (each redacted and capped at 8 KiB when present), and a `recent_conversation` digest capped by `advisorJevDigestMaxChars` (default 4 000 characters). The digest is built by the same pipeline as the Advisor context: tool disclosure policies, tool-result caps, and optional secret redaction all apply, and older entries are dropped first. No Git context, no file attachments, no Scout output, and no project preferences are ever sent to Jev. The turn gate sends the digest alone.
+
+Two typed questions travel with the state: a stakes rubric (negligible/moderate/high) and a yes/no self-answerability judgment. Answers are probabilities; pi-advisor composes the skip decision locally and a skip requires both confident negligible stakes and confident self-answerability. Any failure — missing key, authentication, timeout, network, malformed response — allows the consultation (fail-open) with one notification per distinct outage. Nothing is sent to Herdr about screening activity; turn-gate *consultations* are ordinary Advisor egress.
+
+Jev usage is accounted locally in the Session Advisor Summary (tokens and an estimated cost from `advisorJevPricePerMtok`) and never inflates consultation counters. The API key is held in memory only, passed per request, never logged or included in error messages, and sent only to the endpoint of the resolved transport.
+
 ## Session summary and Herdr
 
 The optional Session Advisor Summary defaults to off. When enabled, it is local and in-memory only, appears after a non-blocked settled run, and is never persisted.

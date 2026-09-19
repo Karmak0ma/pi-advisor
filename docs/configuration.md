@@ -84,6 +84,22 @@ Scout usage, latency, selection counts, pre-Scout omissions, and fallback reason
 
 Normal consultations preserve the provider's final Markdown and never block execution. If the Advisor explicitly says it cannot review a specifically named file, the Executor may make a sequential follow-up call with `includeTrackedFiles` when global tracked-file consent is enabled; this is discretionary, not an automatic retry. When the Advisor has no material concern or recommendation, it may begin with the exact first line `Verdict: sound`. Pi renders that response with the static `◆ ADVISOR · SOUND` header for both `ask_advisor` results and `/advisor-manual`.
 
+## Jev consultation filter (TypeSafe)
+
+`advisorJevFilterEnabled` defaults to `false`. When enabled, one cheap TypeSafe Jev call screens each `ask_advisor` invocation: low-stakes, self-answerable requests are skipped with a normal tool result telling the Executor to proceed on its own judgment; everything else consults the Advisor exactly as without the filter.
+
+- **Transport**: `advisorJevTransport` = `auto` (default) prefers a dedicated TypeSafe key (Bun.secrets `pi-advisor/typesafe-api-key`, then the `TYPESAFE_API_KEY` environment variable, then a hand-placed `typesafe_api_key` string in `advisor.json` — read-only and not recommended) and otherwise **reuses an existing OpenRouter login configured in Pi**. `typesafe` or `openrouter` force one chain. OpenRouter serves Jev through its Decisions API; a configured OpenRouter login is enough and no new key is needed.
+- **Guided setup**: `/advisor-settings` → `Jev consultation filter` detects the transport, verifies it with one live Jev call before the flag flips on, and offers masked entry of a TypeSafe key (stored in Bun.secrets when available; under a Node runtime it instructs setting `TYPESAFE_API_KEY` yourself without echoing the key). Disable and disable-and-clear paths are in the same flow.
+- **Fail-open**: a missing key, authentication failure, timeout, network error, or malformed response lets the consultation run as configured; the failure is surfaced once per distinct outage.
+- **Asymmetry**: a skip requires the hard conjunction of confident negligible stakes (`advisorJevFilterSkipConfidence`, default `0.85`) and confident self-answerability (`advisorJevFilterNoulMargin`, default `0.35`, added to a coin flip). Any uncertainty allows.
+- **Overrides**: a skipped consultation never mentions the `force` parameter; it is discoverable only in the tool schema. The same question recurring within `advisorJevFilterOverrideWindow` (default `10` turns) passes automatically. Both force-after-skip and automatic passthroughs are counted in the Session Advisor Summary.
+- **Repeats**: an exact repeat of an already-answered question is skipped without a Jev call and the earlier advice is reattached.
+- **Costs**: `advisorJevModel` (default `jev-latest`), `advisorJevTimeoutMs` (default `8000`, the total wall budget incl. one retry), `advisorJevDigestMaxChars` (default `4000` conversation characters sent as evidence), and `advisorJevPricePerMtok` (default `0.042`) feed the summary's Jev spend line. A skipped call consumes no `advisorMaxCallsPerSession` budget.
+
+## Proactive Jev turn gate
+
+`advisorJevTurnGateEveryTurns` defaults to `0` (off). When set to N, every Nth completed turn **without a consultation** runs one Jev check over the conversation digest asking whether a senior advisor should weigh in right now. A confident yes (`advisorJevTurnGateNoulThreshold`, default `0.8`) runs a real Advisor consultation delivered to the Executor as a steer message between turns; any no, uncertainty, or failure keeps the status quo. Turn-gate consultations consume the shared `advisorMaxCallsPerSession` budget, appear in the Session Advisor Summary under trigger `turn-gate`, and coordinate with the loop gate: any consultation resets the without-consultation counter.
+
 ## Automatic loop gate
 
 The optional loop gate detects consecutive calls with the same normalized tool signature. By default, it consults the Advisor after three repeats.

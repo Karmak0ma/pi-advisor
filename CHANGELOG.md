@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## Unreleased
 
+### Added
+
+- Optional Jev consultation filter (TypeSafe): `ask_advisor` calls are screened by one cheap Jev request; confident low-stakes and self-answerable requests are skipped with guidance instead of advice, exact repeats reattach earlier advice, and a `force` parameter plus a turn-window override let the Executor bypass screening. Fail-open on every Jev failure; off by default.
+- Optional proactive Jev turn gate: every N turns without a consultation, one Jev check can trigger a real Advisor consultation delivered as a steer message between turns; off by default (`advisorJevTurnGateEveryTurns: 0`).
+- Jev transports: direct TypeSafe API or the OpenRouter Decisions API; `advisorJevTransport: auto` prefers a dedicated TypeSafe key (Bun.secrets, `TYPESAFE_API_KEY`, or a read-only `typesafe_api_key` in advisor.json) and otherwise reuses an existing OpenRouter login configured in Pi. Guided setup in `/advisor-settings` verifies credentials live before enabling and offers masked key entry, Bun.secrets storage, plaintext-key migration, and disable/clear paths.
+- Ten `advisorJev*` settings, Jev cost/usage accounting in the Session Advisor Summary (including an explicitly labelled upper-bound saving estimate from skips), and per-session Jev ledger lines separated from consultation counters.
+
 ### Changed
 
 - Updated development tooling dependencies (ultracite 7.12.0, Biome 2.5.13, knip 6.37.0, lint-staged 17.5.1, typebox 1.3.34, @types/node 26.6.2, bun-types 1.4.2); no runtime dependencies changed. Biome is held at 2.5.13 because 2.5.14's `noUnnecessaryConditions` regression falsely flags the gate parsers' required `RegExp.exec` null-guards as dead code.

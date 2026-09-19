@@ -25,6 +25,7 @@ Keep implementation on a fast model and borrow frontier reasoning only when deci
 - **Optional persistent activation, Simple mode, session summaries, and Herdr integration.**
 - **Compact searchable `/advisor-settings`** that matches Pi's settings list and saves changes immediately.
 - **Experimental Advisor Scout** that uses the configured Executor model to curate conversation evidence before every Advisor call.
+- **Optional Jev consultation filter and proactive turn gate** (TypeSafe): one cheap typed screening call skips low-stakes, self-answerable consultations; a periodic turn check can proactively pull in the Advisor. Works directly with a TypeSafe key or by reusing an existing OpenRouter login; both features are off by default.
 
 ## How it works
 
