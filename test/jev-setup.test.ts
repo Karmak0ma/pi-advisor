@@ -153,9 +153,18 @@ describe("JevSetupSubmenu", () => {
     expect(masked.getValue()).toBe("tsk");
   });
 
-  test("under a Node runtime the entered key leads to the env instruction without enabling", async () => {
+  test("stores the entered key securely even without Bun.secrets and enables", async () => {
+    const written: string[] = [];
     const { results, setup } = openSetup({
-      deps: { hasSecretStore: () => false },
+      deps: {
+        writeKey: (key: string) => {
+          written.push(key);
+          return Promise.resolve({
+            message: "Key stored in ~/.pi/agent/typesafe_api_key (mode 0600).",
+            ok: true,
+          });
+        },
+      },
     });
     await settle();
     setup.handleInput("\r");
@@ -164,9 +173,11 @@ describe("JevSetupSubmenu", () => {
     setup.handleInput("k");
     setup.handleInput("\r");
     await settle();
-    expect(screen(setup)).toContain("export TYPESAFE_API_KEY=");
-    expect(screen(setup)).not.toContain("tsk");
-    expect(results).toEqual([]);
+    expect(written).toEqual(["tsk"]);
+    expect(results).toEqual(["On"]);
+    const screenText = screen(setup);
+    expect(screenText).toContain("mode 0600");
+    expect(screenText).not.toContain("tsk");
   });
 
   test("a store failure surfaces the env alternative without enabling", async () => {

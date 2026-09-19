@@ -11,6 +11,15 @@ import {
   writeKeyTypeSafeKey,
 } from "../src/jev/key-store.ts";
 
+const fileStoreSpy = () => {
+  const written: string[] = [];
+  return {
+    files: written,
+    readFileStore: () => written.at(-1),
+    writeFileStore: (key: string) => written.push(key),
+  };
+};
+
 const memorySecrets = (
   initial?: Map<string, string>
 ): JevSecretsLike & { stored: Map<string, string> } => {
@@ -75,9 +84,27 @@ describe("resolveTypeSafeKey", () => {
     const resolution = await resolveTypeSafeKey({
       env: {},
       readAdvisorJson: () => ({}),
+      readFileStore: () => undefined,
       secrets: null,
     });
     expect(resolution).toEqual({});
+  });
+
+  test("resolves the 0600 file store after env and before advisor.json", async () => {
+    const fromFile = await resolveTypeSafeKey({
+      env: {},
+      readAdvisorJson: () => ({ typesafe_api_key: "config-key" }),
+      readFileStore: () => " file-key\n",
+      secrets: null,
+    });
+    expect(fromFile).toEqual({ key: "file-key", source: "file" });
+    const envWins = await resolveTypeSafeKey({
+      env: { TYPESAFE_API_KEY: "env-key" },
+      readAdvisorJson: () => ({}),
+      readFileStore: () => "file-key",
+      secrets: null,
+    });
+    expect(envWins).toEqual({ key: "env-key", source: "env" });
   });
 
   test("skips an unavailable secret store instead of throwing", async () => {
@@ -119,13 +146,31 @@ describe("writeKeyTypeSafeKey", () => {
     }
   });
 
-  test("reports an unavailable secret store with the env alternative", async () => {
-    const result = await writeKeyTypeSafeKey("key", {
+  test("writes the 0600 file store when Bun.secrets is unavailable", async () => {
+    const files = fileStoreSpy();
+    const result = await writeKeyTypeSafeKey(" key ", {
       env: {},
+      ...files,
       readAdvisorJson: () => ({}),
       secrets: null,
     });
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain("0600");
+    expect(files.files).toEqual(["key"]);
+  });
+
+  test("reports a file-store write failure with the env alternative", async () => {
+    const result = await writeKeyTypeSafeKey("key", {
+      env: {},
+      readAdvisorJson: () => ({}),
+      readFileStore: () => undefined,
+      secrets: null,
+      writeFileStore: () => {
+        throw new Error("disk full");
+      },
+    });
     expect(result.ok).toBe(false);
+    expect(result.message).toContain("disk full");
     expect(result.message).toContain("TYPESAFE_API_KEY");
   });
 
@@ -164,14 +209,14 @@ describe("clearKeyTypeSafeKey", () => {
     expect(secrets.stored.has("pi-advisor/typesafe-api-key")).toBe(false);
   });
 
-  test("explains when no secret store is active", async () => {
+  test("clears the stored file even without a secret store", async () => {
     const result = await clearKeyTypeSafeKey({
       env: { TYPESAFE_API_KEY: "env-key" },
       readAdvisorJson: () => ({}),
       secrets: null,
     });
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain("TYPESAFE_API_KEY");
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain("cleared");
   });
 });
 

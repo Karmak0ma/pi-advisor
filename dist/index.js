@@ -4741,6 +4741,8 @@ var rainbowGradient = (text, startedAt) => {
 
 // src/ui/jev-setup-submenu.ts
 import {
+  Key as Key2,
+  matchesKey as matchesKey2,
   truncateToWidth as truncateToWidth5
 } from "@earendil-works/pi-tui";
 
@@ -5016,17 +5018,40 @@ class JevClient {
 }
 
 // src/jev/key-store.ts
-import { writeFileSync as writeFileSync2 } from "node:fs";
+import {
+  chmodSync,
+  existsSync as existsSync3,
+  readFileSync as readFileSync3,
+  rmSync,
+  writeFileSync as writeFileSync2
+} from "node:fs";
 import { join as join4 } from "node:path";
 import { getAgentDir as getAgentDir3 } from "@earendil-works/pi-coding-agent";
 var TYPESAFE_KEY_ENV_VAR = "TYPESAFE_API_KEY";
 var TYPESAFE_KEY_SERVICE = "pi-advisor";
 var TYPESAFE_KEY_NAME = "typesafe-api-key";
 var TYPESAFE_KEY_CONFIG_FIELD = "typesafe_api_key";
+var KEY_FILE_MODE = 384;
+var keyFilePath = () => join4(getAgentDir3(), "typesafe_api_key");
 var runtimeSecrets = () => globalThis.Bun?.secrets;
-var hasRuntimeSecretStore = () => runtimeSecrets() !== undefined;
 var normalizeKey = (value) => value?.trim() || undefined;
 var readAdvisorJsonConfig = () => readExistingConfig(join4(getAgentDir3(), "advisor.json"));
+var defaultReadFileStore = () => {
+  try {
+    return normalizeKey(readFileSync3(keyFilePath(), "utf8"));
+  } catch {
+    return;
+  }
+};
+var defaultWriteFileStore = (key) => {
+  const path = keyFilePath();
+  writeFileSync2(path, `${key}
+`, { mode: KEY_FILE_MODE });
+  chmodSync(path, KEY_FILE_MODE);
+};
+var defaultDeleteFileStore = () => {
+  rmSync(keyFilePath(), { force: true });
+};
 var messageOf = (error) => redactSecrets(error instanceof Error ? error.message : String(error));
 var resolveTypeSafeKey = async (deps = {}) => {
   const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
@@ -5046,6 +5071,11 @@ var resolveTypeSafeKey = async (deps = {}) => {
   if (fromEnv) {
     return { key: fromEnv, source: "env" };
   }
+  const readFileStore = deps.readFileStore ?? defaultReadFileStore;
+  const fromFile = normalizeKey(readFileStore());
+  if (fromFile) {
+    return { key: fromFile, source: "file" };
+  }
   const config = (deps.readAdvisorJson ?? readAdvisorJsonConfig)();
   const staged = config[TYPESAFE_KEY_CONFIG_FIELD];
   if (typeof staged === "string") {
@@ -5062,46 +5092,67 @@ var writeKeyTypeSafeKey = async (key, deps = {}) => {
     return { message: "The key is empty.", ok: false };
   }
   const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
-  if (!secrets) {
-    return {
-      message: `Bun.secrets is unavailable in this runtime. Set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile instead.`,
-      ok: false
-    };
+  if (secrets) {
+    try {
+      await secrets.set({
+        name: TYPESAFE_KEY_NAME,
+        service: TYPESAFE_KEY_SERVICE,
+        value: normalized
+      });
+      return { message: "Key stored in Bun.secrets.", ok: true };
+    } catch (error) {
+      return {
+        message: `Storing the key in Bun.secrets failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
+        ok: false
+      };
+    }
   }
   try {
-    await secrets.set({
-      name: TYPESAFE_KEY_NAME,
-      service: TYPESAFE_KEY_SERVICE,
-      value: normalized
-    });
-    return { message: "Key stored in Bun.secrets.", ok: true };
+    (deps.writeFileStore ?? defaultWriteFileStore)(normalized);
+    return {
+      message: "Key stored in ~/.pi/agent/typesafe_api_key (mode 0600).",
+      ok: true
+    };
   } catch (error) {
     return {
-      message: `Storing the key in Bun.secrets failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
+      message: `Storing the key failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
       ok: false
     };
   }
 };
 var clearKeyTypeSafeKey = async (deps = {}) => {
+  let clearedSomething = false;
+  let firstError;
   const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
-  if (!secrets) {
-    return {
-      message: `No Bun.secrets store is active in this runtime; pi-advisor stored nothing. Unset ${TYPESAFE_KEY_ENV_VAR} yourself if you use it.`,
-      ok: false
-    };
+  if (secrets) {
+    try {
+      await secrets.delete({
+        name: TYPESAFE_KEY_NAME,
+        service: TYPESAFE_KEY_SERVICE
+      });
+      clearedSomething = true;
+    } catch (error) {
+      firstError = messageOf(error);
+    }
   }
   try {
-    await secrets.delete({
-      name: TYPESAFE_KEY_NAME,
-      service: TYPESAFE_KEY_SERVICE
-    });
-    return { message: "Stored key cleared.", ok: true };
+    if (existsSync3(keyFilePath())) {
+      defaultDeleteFileStore();
+    }
+    clearedSomething = true;
   } catch (error) {
+    firstError ??= messageOf(error);
+  }
+  if (firstError) {
     return {
-      message: `Clearing the stored key failed: ${messageOf(error)}.`,
+      message: `Clearing the stored key failed: ${firstError}.`,
       ok: false
     };
   }
+  return {
+    message: `Stored key cleared.${clearedSomething ? "" : ` Nothing was stored; unset ${TYPESAFE_KEY_ENV_VAR} and remove ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json yourself if you use them.`}`,
+    ok: true
+  };
 };
 var removeTypeSafeKeyFromAdvisorJson = () => {
   try {
@@ -5128,7 +5179,7 @@ var consumePlaintextKeyWarning = () => {
     return;
   }
   warnedPlaintextKey = true;
-  return `Advisor is using a plaintext ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json; this is not recommended. Open /advisor-settings → Jev consultation filter to migrate it, or use the ${TYPESAFE_KEY_ENV_VAR} environment variable.`;
+  return `Advisor is using a plaintext ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json; this is not recommended. Open /advisor-settings → Jev consultation filter to migrate it into a secure store, or use the ${TYPESAFE_KEY_ENV_VAR} environment variable.`;
 };
 
 // src/jev/transport.ts
@@ -5212,6 +5263,8 @@ var transportLabel = (credentials) => {
       return "TypeSafe (key: advisor.json — plaintext, not recommended)";
     case "bun-secrets":
       return "TypeSafe (key: Bun.secrets)";
+    case "file":
+      return "TypeSafe (key: stored file, mode 0600)";
     default:
       return "TypeSafe (key: TYPESAFE_API_KEY)";
   }
@@ -5247,7 +5300,6 @@ class JevSetupSubmenu {
     this.options = options;
     this.deps = {
       clearStoredKey: deps.clearStoredKey ?? clearKeyTypeSafeKey,
-      hasSecretStore: deps.hasSecretStore ?? hasRuntimeSecretStore,
       removePlaintextKey: deps.removePlaintextKey ?? removeTypeSafeKeyFromAdvisorJson,
       resolveTransport: deps.resolveTransport ?? (() => resolveJevTransport()),
       verify: deps.verify ?? defaultVerify,
@@ -5282,11 +5334,11 @@ class JevSetupSubmenu {
       return;
     }
     const actions = this.actions();
-    if (keyData === "\x1B[B") {
+    if (matchesKey2(keyData, Key2.down) || keyData === "\x1B[B" || keyData === "\x1BOB") {
       this.selectedIndex = (this.selectedIndex + 1) % actions.length;
-    } else if (keyData === "\x1B[A") {
+    } else if (matchesKey2(keyData, Key2.up) || keyData === "\x1B[A" || keyData === "\x1BOA") {
       this.selectedIndex = (this.selectedIndex - 1 + actions.length) % actions.length;
-    } else if (keyData === "\r") {
+    } else if (matchesKey2(keyData, Key2.enter) || keyData === "\r") {
       this.activate(actions[this.selectedIndex]);
     } else {
       return;
@@ -5334,7 +5386,7 @@ class JevSetupSubmenu {
     const enabled = this.options.currentValue === "On";
     const actions = [enabled ? "verify-again" : "verify-enable"];
     actions.push("disable");
-    if (this.credentials.source === "bun-secrets") {
+    if (this.credentials.source === "bun-secrets" || this.credentials.source === "file") {
       actions.push("disable-clear");
     }
     actions.push("done");
@@ -5396,12 +5448,11 @@ class JevSetupSubmenu {
     }
   }
   async disableAndClear() {
-    if (!this.deps.clearStoredKey) {
-      this.notice = "No Bun.secrets store is active; unset TYPESAFE_API_KEY yourself if you use it.";
-      this.options.tui.requestRender();
+    const clear = this.deps.clearStoredKey;
+    if (!clear) {
       return;
     }
-    const result = await this.deps.clearStoredKey();
+    const result = await clear();
     this.credentials = undefined;
     this.notice = result.message;
     this.options.done("Off");
@@ -5421,7 +5472,7 @@ class JevSetupSubmenu {
       this.options.tui.requestRender();
       return;
     }
-    if (credentials.transport === "typesafe" && credentials.source === "advisor-json" && this.deps.hasSecretStore?.()) {
+    if (credentials.transport === "typesafe" && credentials.source === "advisor-json") {
       const stored = await this.deps.writeKey?.(credentials.apiKey);
       if (!stored?.ok) {
         this.notice = stored?.message ?? "Storing the key failed; the plaintext advisor.json key keeps working.";
@@ -5429,7 +5480,7 @@ class JevSetupSubmenu {
         return;
       }
       const removed = this.deps.removePlaintextKey?.();
-      this.notice = removed?.ok ? "Key moved from advisor.json into Bun.secrets." : `Stored in Bun.secrets, but ${removed?.message ?? "removing the plaintext copy failed; remove it yourself."}`;
+      this.notice = removed?.ok ? "Key moved from advisor.json into the secure store." : `Stored securely, but ${removed?.message ?? "removing the plaintext copy failed; remove it yourself."}`;
     }
     this.options.done("On");
   }
@@ -5453,20 +5504,15 @@ class JevSetupSubmenu {
       this.options.tui.requestRender();
       return;
     }
-    if (this.deps.hasSecretStore?.()) {
-      const stored = await this.deps.writeKey?.(key);
-      if (!stored?.ok) {
-        this.notice = stored?.message ?? "Storing the key failed.";
-        this.options.tui.requestRender();
-        return;
-      }
-      this.notice = "Key stored in Bun.secrets; verification succeeded.";
-      await this.refresh();
-      this.options.done("On");
+    const stored = await this.deps.writeKey?.(key);
+    if (!stored?.ok) {
+      this.notice = stored?.message ?? "Storing the key failed.";
+      this.options.tui.requestRender();
       return;
     }
-    this.notice = "Verified. Set the key yourself in your shell profile: export TYPESAFE_API_KEY=<the key you entered> (not echoed here). Reopen this setup after setting it to enable.";
-    this.options.tui.requestRender();
+    this.notice = `${stored.message} Verification succeeded.`;
+    await this.refresh();
+    this.options.done("On");
   }
 }
 
@@ -5779,8 +5825,8 @@ var createSettingsItems = ({
 
 // src/ui/settings-list-adapter.ts
 import {
-  Key as Key2,
-  matchesKey as matchesKey2
+  Key as Key3,
+  matchesKey as matchesKey3
 } from "@earendil-works/pi-tui";
 
 class SettingsListAdapter {
@@ -5815,9 +5861,9 @@ class SettingsListAdapter {
   }
   changeWithArrow(keyData, onChange) {
     let direction = 0;
-    if (matchesKey2(keyData, Key2.left) || keyData === "\x1B[D") {
+    if (matchesKey3(keyData, Key3.left) || keyData === "\x1B[D") {
       direction = -1;
-    } else if (matchesKey2(keyData, Key2.right) || keyData === "\x1B[C") {
+    } else if (matchesKey3(keyData, Key3.right) || keyData === "\x1B[C") {
       direction = 1;
     }
     if (direction === 0) {

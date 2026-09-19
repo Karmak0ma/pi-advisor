@@ -60,7 +60,7 @@ The Jev `state` contains four named fields and nothing else: a `role` marker, th
 
 Two typed questions travel with the state: a stakes rubric (negligible/moderate/high) and a yes/no self-answerability judgment. Answers are probabilities; pi-advisor composes the skip decision locally and a skip requires both confident negligible stakes and confident self-answerability. Any failure — missing key, authentication, timeout, network, malformed response — allows the consultation (fail-open) with one notification per distinct outage. Nothing is sent to Herdr about screening activity; turn-gate *consultations* are ordinary Advisor egress.
 
-Jev usage is accounted locally in the Session Advisor Summary (tokens and an estimated cost from `advisorJevPricePerMtok`) and never inflates consultation counters. The API key is held in memory only, passed per request, never logged or included in error messages, and sent only to the endpoint of the resolved transport.
+Jev usage is accounted locally in the Session Advisor Summary (tokens and an estimated cost from `advisorJevPricePerMtok`) and never inflates consultation counters. The API key is held in memory only, passed per request, never logged or included in error messages, and sent only to the endpoint of the resolved transport. Keys entered in guided setup are stored by the extension in the OS secret store when the runtime provides Bun.secrets and otherwise in a dedicated `0600`-mode file (`~/.pi/agent/typesafe_api_key`) — never in `advisor.json`, which keeps plaintext keys only when you place them there yourself (read-only, with a migration offer).
 
 ## Session summary and Herdr
 

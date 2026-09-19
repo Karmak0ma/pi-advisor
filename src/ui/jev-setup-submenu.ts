@@ -2,6 +2,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
   type Component,
   type Focusable,
+  Key,
+  matchesKey,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { noul } from "@typesafe-ai/sdk";
@@ -10,7 +12,6 @@ import { JevClient } from "../jev/client.ts";
 import {
   clearKeyTypeSafeKey,
   consumePlaintextKeyWarning,
-  hasRuntimeSecretStore,
   type JevKeyStoreResult,
   removeTypeSafeKeyFromAdvisorJson,
   writeKeyTypeSafeKey,
@@ -28,7 +29,6 @@ export interface JevSetupSubmenuOptions {
 
 export interface JevSetupDeps {
   clearStoredKey?: () => Promise<JevKeyStoreResult>;
-  hasSecretStore?: () => boolean;
   removePlaintextKey?: () => JevKeyStoreResult;
   resolveTransport?: () => Promise<JevCredentials | undefined>;
   verify?: (credentials: JevCredentials) => Promise<JevFailureLike>;
@@ -58,6 +58,8 @@ const transportLabel = (credentials: JevCredentials): string => {
       return "TypeSafe (key: advisor.json — plaintext, not recommended)";
     case "bun-secrets":
       return "TypeSafe (key: Bun.secrets)";
+    case "file":
+      return "TypeSafe (key: stored file, mode 0600)";
     default:
       return "TypeSafe (key: TYPESAFE_API_KEY)";
   }
@@ -100,7 +102,6 @@ export class JevSetupSubmenu implements Component, Focusable {
     this.options = options;
     this.deps = {
       clearStoredKey: deps.clearStoredKey ?? clearKeyTypeSafeKey,
-      hasSecretStore: deps.hasSecretStore ?? hasRuntimeSecretStore,
       removePlaintextKey:
         deps.removePlaintextKey ?? removeTypeSafeKeyFromAdvisorJson,
       resolveTransport: deps.resolveTransport ?? (() => resolveJevTransport()),
@@ -138,12 +139,20 @@ export class JevSetupSubmenu implements Component, Focusable {
       return;
     }
     const actions = this.actions();
-    if (keyData === "\u001b[B") {
+    if (
+      matchesKey(keyData, Key.down) ||
+      keyData === "\u001b[B" ||
+      keyData === "\u001bOB"
+    ) {
       this.selectedIndex = (this.selectedIndex + 1) % actions.length;
-    } else if (keyData === "\u001b[A") {
+    } else if (
+      matchesKey(keyData, Key.up) ||
+      keyData === "\u001b[A" ||
+      keyData === "\u001bOA"
+    ) {
       this.selectedIndex =
         (this.selectedIndex - 1 + actions.length) % actions.length;
-    } else if (keyData === "\r") {
+    } else if (matchesKey(keyData, Key.enter) || keyData === "\r") {
       this.activate(actions[this.selectedIndex]);
     } else {
       return;
@@ -197,7 +206,10 @@ export class JevSetupSubmenu implements Component, Focusable {
     const enabled = this.options.currentValue === "On";
     const actions: SetupAction[] = [enabled ? "verify-again" : "verify-enable"];
     actions.push("disable");
-    if (this.credentials.source === "bun-secrets") {
+    if (
+      this.credentials.source === "bun-secrets" ||
+      this.credentials.source === "file"
+    ) {
       actions.push("disable-clear");
     }
     actions.push("done");
@@ -260,13 +272,11 @@ export class JevSetupSubmenu implements Component, Focusable {
   }
 
   private async disableAndClear(): Promise<void> {
-    if (!this.deps.clearStoredKey) {
-      this.notice =
-        "No Bun.secrets store is active; unset TYPESAFE_API_KEY yourself if you use it.";
-      this.options.tui.requestRender();
+    const clear = this.deps.clearStoredKey;
+    if (!clear) {
       return;
     }
-    const result = await this.deps.clearStoredKey();
+    const result = await clear();
     this.credentials = undefined;
     this.notice = result.message;
     this.options.done("Off");
@@ -289,8 +299,7 @@ export class JevSetupSubmenu implements Component, Focusable {
     }
     if (
       credentials.transport === "typesafe" &&
-      credentials.source === "advisor-json" &&
-      this.deps.hasSecretStore?.()
+      credentials.source === "advisor-json"
     ) {
       const stored = await this.deps.writeKey?.(credentials.apiKey);
       if (!stored?.ok) {
@@ -302,8 +311,8 @@ export class JevSetupSubmenu implements Component, Focusable {
       }
       const removed = this.deps.removePlaintextKey?.();
       this.notice = removed?.ok
-        ? "Key moved from advisor.json into Bun.secrets."
-        : `Stored in Bun.secrets, but ${removed?.message ?? "removing the plaintext copy failed; remove it yourself."}`;
+        ? "Key moved from advisor.json into the secure store."
+        : `Stored securely, but ${removed?.message ?? "removing the plaintext copy failed; remove it yourself."}`;
     }
     this.options.done("On");
   }
@@ -328,20 +337,14 @@ export class JevSetupSubmenu implements Component, Focusable {
       this.options.tui.requestRender();
       return;
     }
-    if (this.deps.hasSecretStore?.()) {
-      const stored = await this.deps.writeKey?.(key);
-      if (!stored?.ok) {
-        this.notice = stored?.message ?? "Storing the key failed.";
-        this.options.tui.requestRender();
-        return;
-      }
-      this.notice = "Key stored in Bun.secrets; verification succeeded.";
-      await this.refresh();
-      this.options.done("On");
+    const stored = await this.deps.writeKey?.(key);
+    if (!stored?.ok) {
+      this.notice = stored?.message ?? "Storing the key failed.";
+      this.options.tui.requestRender();
       return;
     }
-    this.notice =
-      "Verified. Set the key yourself in your shell profile: export TYPESAFE_API_KEY=<the key you entered> (not echoed here). Reopen this setup after setting it to enable.";
-    this.options.tui.requestRender();
+    this.notice = `${stored.message} Verification succeeded.`;
+    await this.refresh();
+    this.options.done("On");
   }
 }
