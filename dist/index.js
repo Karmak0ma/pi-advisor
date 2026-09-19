@@ -4362,6 +4362,617 @@ class ManualAdvisorDialog {
   }
 }
 
+// src/jev/client.ts
+class JevFailure extends Error {
+  category;
+  constructor(category, message) {
+    super(message);
+    this.name = "JevFailure";
+    this.category = category;
+  }
+}
+var ENDPOINTS = {
+  openrouter: "https://openrouter.ai/api/alpha/decisions",
+  typesafe: "https://api.typesafe.ai/v1/systemone"
+};
+var RETRYABLE_STATUSES = new Set([408, 429, ...range(500, 599)]);
+var RETRY_BACKOFF_MS = 250;
+var MAX_ATTEMPTS = 2;
+function range(from, to) {
+  return Array.from({ length: to - from + 1 }, (_, index) => from + index);
+}
+var finiteTokens = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+var errorDetail = (error) => {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    return String(error.message);
+  }
+  return "";
+};
+var statusCategory = (status) => {
+  if (status === 401 || status === 403) {
+    return "auth";
+  }
+  if (status === 400 || status === 422) {
+    return "malformed";
+  }
+  return "error";
+};
+var openRouterModelId = (model) => model.includes("/") ? model : `~typesafe/${model}`;
+
+class JevClient {
+  #apiKey;
+  #endpoint;
+  #fetch;
+  #model;
+  #pricePerMtok;
+  #timeoutMs;
+  constructor({
+    apiKey,
+    fetch,
+    model,
+    pricePerMtok,
+    timeoutMs,
+    transport
+  }) {
+    this.#apiKey = apiKey;
+    this.#endpoint = ENDPOINTS[transport];
+    this.#fetch = fetch ?? globalThis.fetch.bind(globalThis);
+    this.#model = transport === "openrouter" ? openRouterModelId(model) : model;
+    this.#pricePerMtok = pricePerMtok;
+    this.#timeoutMs = timeoutMs;
+  }
+  async ask(state, questions, signal) {
+    const deadline = new AbortController;
+    const abortFromCaller = () => deadline.abort(signal?.reason);
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+    if (signal?.aborted) {
+      abortFromCaller();
+    }
+    let deadlineHit = false;
+    const timer = setTimeout(() => {
+      deadlineHit = true;
+      deadline.abort(new Error("Jev wall-time budget elapsed"));
+    }, this.#timeoutMs);
+    timer.unref?.();
+    const body = JSON.stringify({
+      model: this.#model,
+      questions,
+      state
+    });
+    try {
+      let outcome = {};
+      for (let attempt = 1;; attempt += 1) {
+        outcome = await this.#attempt(body, deadline.signal);
+        if (!outcome.retryable || attempt >= MAX_ATTEMPTS) {
+          break;
+        }
+        await this.#backoff(deadline.signal);
+        if (deadline.signal.aborted) {
+          break;
+        }
+      }
+      return this.#settle(outcome, deadlineHit, signal);
+    } catch (error) {
+      if (signal?.aborted && !deadlineHit) {
+        throw error;
+      }
+      if (error instanceof JevFailure) {
+        throw error;
+      }
+      const message = redactSecrets(error instanceof Error ? error.message : String(error));
+      throw deadlineHit ? new JevFailure("timeout", `Jev call exceeded its ${this.#timeoutMs} ms wall-time budget.`) : new JevFailure("error", message);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abortFromCaller);
+    }
+  }
+  #settle(outcome, deadlineHit, signal) {
+    if (outcome.answers) {
+      return this.#result(outcome);
+    }
+    if (deadlineHit && outcome.failure?.category !== "auth") {
+      throw new JevFailure("timeout", `Jev call exceeded its ${this.#timeoutMs} ms wall-time budget.`);
+    }
+    if (outcome.failure) {
+      throw outcome.failure;
+    }
+    if (signal?.aborted) {
+      throw new Error("Jev call aborted by the caller.");
+    }
+    throw new JevFailure("error", "Jev call failed.");
+  }
+  async#backoff(signal) {
+    if (signal.aborted) {
+      return;
+    }
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, RETRY_BACKOFF_MS);
+      timer.unref?.();
+      const onAbort = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+  async#attempt(body, signal) {
+    if (signal.aborted) {
+      return { retryable: false };
+    }
+    let response;
+    try {
+      response = await this.#fetch(this.#endpoint, {
+        body,
+        headers: {
+          authorization: `Bearer ${this.#apiKey}`,
+          "content-type": "application/json"
+        },
+        method: "POST",
+        signal
+      });
+    } catch (error) {
+      if (signal.aborted) {
+        return { retryable: false };
+      }
+      return {
+        retryable: true,
+        ...this.#connectionFailure(error)
+      };
+    }
+    if (response.ok) {
+      return this.#parseSuccess(response);
+    }
+    const failure = await this.#failureFromStatus(response);
+    return {
+      failure,
+      retryable: RETRYABLE_STATUSES.has(response.status)
+    };
+  }
+  #connectionFailure(error) {
+    const message = redactSecrets(error instanceof Error ? error.message : String(error));
+    return {
+      failure: new JevFailure("network", `Jev connection failed: ${message}`)
+    };
+  }
+  async#failureFromStatus(response) {
+    let detail = "";
+    try {
+      const parsed = await response.json();
+      const error = parsed?.error;
+      detail = errorDetail(error);
+    } catch {
+      detail = "";
+    }
+    const message = redactSecrets(`Jev ${this.#transportLabel()} request failed with HTTP ${response.status}${detail ? `: ${detail}` : ""}.`);
+    return new JevFailure(statusCategory(response.status), message);
+  }
+  #transportLabel() {
+    return this.#endpoint === ENDPOINTS.openrouter ? "OpenRouter" : "TypeSafe";
+  }
+  async#parseSuccess(response) {
+    let parsed;
+    try {
+      parsed = await response.json();
+    } catch (error) {
+      return {
+        failure: new JevFailure("malformed", `Jev response was not JSON: ${redactSecrets(error instanceof Error ? error.message : String(error))}`)
+      };
+    }
+    const record = parsed;
+    if (!record || typeof record !== "object" || !record.answers || typeof record.answers !== "object") {
+      return {
+        failure: new JevFailure("malformed", "Jev response did not include an answers object.")
+      };
+    }
+    return {
+      answers: record.answers,
+      model: typeof record.model === "string" ? record.model : this.#model,
+      usage: record.usage
+    };
+  }
+  #result(outcome) {
+    const usage = outcome.usage;
+    const inputTokens = finiteTokens(usage?.input_tokens);
+    const outputTokens = finiteTokens(usage?.output_tokens);
+    const price = this.#pricePerMtok ?? advisorJevPricePerMtokRef;
+    return {
+      answers: outcome.answers ?? {},
+      model: outcome.model ?? this.#model,
+      usage: {
+        cost: inputTokens / 1e6 * price,
+        inputTokens,
+        outputTokens
+      }
+    };
+  }
+}
+
+// src/jev/key-store.ts
+import {
+  chmodSync,
+  existsSync as existsSync3,
+  readFileSync as readFileSync3,
+  rmSync,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { join as join4 } from "node:path";
+import { getAgentDir as getAgentDir3 } from "@earendil-works/pi-coding-agent";
+var TYPESAFE_KEY_ENV_VAR = "TYPESAFE_API_KEY";
+var TYPESAFE_KEY_SERVICE = "pi-advisor";
+var TYPESAFE_KEY_NAME = "typesafe-api-key";
+var TYPESAFE_KEY_CONFIG_FIELD = "typesafe_api_key";
+var KEY_FILE_MODE = 384;
+var keyFilePath = () => join4(getAgentDir3(), "typesafe_api_key");
+var runtimeSecrets = () => globalThis.Bun?.secrets;
+var normalizeKey = (value) => value?.trim() || undefined;
+var readAdvisorJsonConfig = () => readExistingConfig(join4(getAgentDir3(), "advisor.json"));
+var defaultReadFileStore = () => {
+  try {
+    return normalizeKey(readFileSync3(keyFilePath(), "utf8"));
+  } catch {
+    return;
+  }
+};
+var defaultWriteFileStore = (key) => {
+  const path = keyFilePath();
+  writeFileSync2(path, `${key}
+`, { mode: KEY_FILE_MODE });
+  chmodSync(path, KEY_FILE_MODE);
+};
+var defaultDeleteFileStore = () => {
+  rmSync(keyFilePath(), { force: true });
+};
+var messageOf = (error) => redactSecrets(error instanceof Error ? error.message : String(error));
+var resolveTypeSafeKey = async (deps = {}) => {
+  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
+  if (secrets) {
+    try {
+      const stored = normalizeKey(await secrets.get({
+        name: TYPESAFE_KEY_NAME,
+        service: TYPESAFE_KEY_SERVICE
+      }));
+      if (stored) {
+        return { key: stored, source: "bun-secrets" };
+      }
+    } catch {}
+  }
+  const env = deps.env ?? process.env;
+  const fromEnv = normalizeKey(env[TYPESAFE_KEY_ENV_VAR]);
+  if (fromEnv) {
+    return { key: fromEnv, source: "env" };
+  }
+  const readFileStore = deps.readFileStore ?? defaultReadFileStore;
+  const fromFile = normalizeKey(readFileStore());
+  if (fromFile) {
+    return { key: fromFile, source: "file" };
+  }
+  const config = (deps.readAdvisorJson ?? readAdvisorJsonConfig)();
+  const staged = config[TYPESAFE_KEY_CONFIG_FIELD];
+  if (typeof staged === "string") {
+    const fromConfig = normalizeKey(staged);
+    if (fromConfig) {
+      return { key: fromConfig, source: "advisor-json" };
+    }
+  }
+  return {};
+};
+var writeKeyTypeSafeKey = async (key, deps = {}) => {
+  const normalized = normalizeKey(key);
+  if (!normalized) {
+    return { message: "The key is empty.", ok: false };
+  }
+  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
+  if (secrets) {
+    try {
+      await secrets.set({
+        name: TYPESAFE_KEY_NAME,
+        service: TYPESAFE_KEY_SERVICE,
+        value: normalized
+      });
+      return { message: "Key stored in Bun.secrets.", ok: true };
+    } catch (error) {
+      return {
+        message: `Storing the key in Bun.secrets failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
+        ok: false
+      };
+    }
+  }
+  try {
+    (deps.writeFileStore ?? defaultWriteFileStore)(normalized);
+    return {
+      message: "Key stored in ~/.pi/agent/typesafe_api_key (mode 0600).",
+      ok: true
+    };
+  } catch (error) {
+    return {
+      message: `Storing the key failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
+      ok: false
+    };
+  }
+};
+var clearKeyTypeSafeKey = async (deps = {}) => {
+  let clearedSomething = false;
+  let firstError;
+  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
+  if (secrets) {
+    try {
+      await secrets.delete({
+        name: TYPESAFE_KEY_NAME,
+        service: TYPESAFE_KEY_SERVICE
+      });
+      clearedSomething = true;
+    } catch (error) {
+      firstError = messageOf(error);
+    }
+  }
+  try {
+    if (deps.deleteFileStore) {
+      deps.deleteFileStore();
+    } else if (existsSync3(keyFilePath())) {
+      defaultDeleteFileStore();
+    }
+    clearedSomething = true;
+  } catch (error) {
+    firstError ??= messageOf(error);
+  }
+  if (firstError) {
+    return {
+      message: `Clearing the stored key failed: ${firstError}.`,
+      ok: false
+    };
+  }
+  return {
+    message: `Stored key cleared.${clearedSomething ? "" : ` Nothing was stored; unset ${TYPESAFE_KEY_ENV_VAR} and remove ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json yourself if you use them.`}`,
+    ok: true
+  };
+};
+var removeTypeSafeKeyFromAdvisorJson = () => {
+  try {
+    const path = join4(getAgentDir3(), "advisor.json");
+    const existing = readExistingConfig(path);
+    if (!(TYPESAFE_KEY_CONFIG_FIELD in existing)) {
+      return { message: "No plaintext key in advisor.json.", ok: true };
+    }
+    delete existing[TYPESAFE_KEY_CONFIG_FIELD];
+    writeFileSync2(path, `${JSON.stringify(existing, null, 2)}
+`);
+    resetConfigCache();
+    return { message: "Plaintext key removed from advisor.json.", ok: true };
+  } catch (error) {
+    return {
+      message: `Removing the plaintext key failed: ${messageOf(error)}.`,
+      ok: false
+    };
+  }
+};
+var warnedPlaintextKey = false;
+var consumePlaintextKeyWarning = () => {
+  if (warnedPlaintextKey) {
+    return;
+  }
+  warnedPlaintextKey = true;
+  return `Advisor is using a plaintext ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json; this is not recommended. Open /advisor-settings → Jev consultation filter to migrate it into a secure store, or use the ${TYPESAFE_KEY_ENV_VAR} environment variable.`;
+};
+
+// src/jev/questions.ts
+var STAKES_RUBRIC = [
+  "Negligible: routine, low-risk, mechanical, or reversible; a wrong call costs little and is easy to undo.",
+  "Moderate: some risk or rework, but bounded and recoverable.",
+  "High: material consequences for correctness, security, cost, user trust, or irreversibility."
+];
+var EVIDENCE_RULE = "Judge from `executor_question` and `executor_draft` when present, otherwise from `recent_conversation`; when both are absent, `recent_conversation` is the evidence to judge from.";
+var screeningQuestions = {
+  self_answerable: {
+    criteria: {
+      false: "The executor needs the Advisor's second opinion.",
+      true: "The executor can resolve this alone with available tools and context."
+    },
+    instructions: `Can the executor confidently resolve this request alone, using available tools and context? ${EVIDENCE_RULE}`,
+    type: "noul"
+  },
+  stakes: {
+    criteria: [...STAKES_RUBRIC],
+    instructions: `How material are the stakes of the decision behind this consultation request? ${EVIDENCE_RULE}`,
+    type: "score"
+  }
+};
+var NUMERIC_KEY_PATTERN = /^\d+$/;
+var isRecord2 = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+var finiteNumber = (value) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
+var lowestStakesProbability = (answer) => {
+  if (!isRecord2(answer)) {
+    return;
+  }
+  const probabilities = isRecord2(answer.probabilities) ? answer.probabilities : {};
+  const legend = isRecord2(answer.legend) ? answer.legend : undefined;
+  if (legend) {
+    const exact = Object.keys(legend).find((key) => legend[key] === STAKES_RUBRIC[0]);
+    if (exact) {
+      return finiteNumber(probabilities[exact]);
+    }
+  }
+  const numericKeys = Object.keys(probabilities).filter((key) => NUMERIC_KEY_PATTERN.test(key));
+  if (numericKeys.length === 0) {
+    return;
+  }
+  const lowest = numericKeys.reduce((left, right) => Number(left) <= Number(right) ? left : right);
+  return finiteNumber(probabilities[lowest]);
+};
+var selfAnswerableNoul = (answer) => isRecord2(answer) ? finiteNumber(answer.noul) : undefined;
+var composeScreeningVerdict = (answers, { noulMargin, skipConfidence }) => {
+  if (!isRecord2(answers)) {
+    return { skip: false };
+  }
+  const negligibleMass = lowestStakesProbability(answers.stakes);
+  const noul = selfAnswerableNoul(answers.self_answerable);
+  if (negligibleMass === undefined || noul === undefined) {
+    return { skip: false };
+  }
+  const confidentlySelfAnswerable = noul >= 0.5 + noulMargin;
+  return {
+    skip: negligibleMass >= skipConfidence && confidentlySelfAnswerable
+  };
+};
+var composeTurnGateVerdict = (answers, threshold) => {
+  if (!isRecord2(answers)) {
+    return false;
+  }
+  const answer = answers.should_consult;
+  const noul = isRecord2(answer) ? finiteNumber(answer.noul) : undefined;
+  return noul !== undefined && noul >= threshold;
+};
+
+// src/jev/state.ts
+var JEV_TEXT_CAP_BYTES = 8 * 1024;
+var buildJevState = (ctx, input = {}) => {
+  const state = { role: "executor" };
+  if (input.question) {
+    state.executor_question = redactAndCapText(input.question, JEV_TEXT_CAP_BYTES, advisorRedactSecretsRef);
+  }
+  if (input.draft) {
+    state.executor_draft = redactAndCapText(input.draft, JEV_TEXT_CAP_BYTES, advisorRedactSecretsRef);
+  }
+  const digest = recentConversation(ctx, advisorJevDigestMaxCharsRef);
+  if (digest) {
+    state.recent_conversation = digest;
+  }
+  return state;
+};
+
+// src/jev/transport.ts
+var OPENROUTER_PROVIDER = "openrouter";
+var openRouterKey = async (ctx, deps) => {
+  const key = deps.getProviderKey ? await deps.getProviderKey(OPENROUTER_PROVIDER) : await ctx?.modelRegistry?.getApiKeyForProvider(OPENROUTER_PROVIDER);
+  return key?.trim() || undefined;
+};
+var resolveJevTransport = async (ctx, deps = {}) => {
+  const preference = advisorJevTransportRef;
+  if (preference !== "openrouter") {
+    const resolveTypesafe = deps.resolveTypesafe ?? resolveTypeSafeKey;
+    const resolution = await resolveTypesafe();
+    if (resolution.key) {
+      return {
+        apiKey: resolution.key,
+        ...resolution.source ? { source: resolution.source } : {},
+        transport: "typesafe"
+      };
+    }
+  }
+  if (preference === "typesafe") {
+    return;
+  }
+  const openrouter = await openRouterKey(ctx, deps);
+  return openrouter ? { apiKey: openrouter, transport: "openrouter" } : undefined;
+};
+
+// src/tools/jev-filter.ts
+var normalizeScreeningQuestion = (question) => question?.trim().toLowerCase().replace(/\s+/g, " ") || undefined;
+var REATTACHED_ADVICE_CAP_BYTES = 4 * 1024;
+var SCREENED_SKIP_TEXT = "Advisor consultation skipped (screened out): the stakes are low and you can resolve this yourself with available tools and context. Proceed on your own judgment with what you already have.";
+var repeatSkipText = (advice) => `Advisor consultation skipped (already answered): this question was answered earlier in this session; the earlier advice is reattached below. Consult again only if the situation has materially changed.
+
+${advice}`;
+var lastNotifiedOutage;
+var notifyOutageOnce = (ctx, category, message) => {
+  const key = `${category}:${message}`;
+  if (key === lastNotifiedOutage) {
+    return;
+  }
+  lastNotifiedOutage = key;
+  if (ctx.hasUI) {
+    ctx.ui.notify(`Advisor Jev filter failed (${category}); allowing consultations. ${message}`, "warning");
+  }
+};
+var allow = () => ({ decision: "allow" });
+var screenConsultation = (ctx, session, options, deps = {}) => {
+  if (!advisorJevFilterEnabledRef || isSimpleMode()) {
+    return Promise.resolve(allow());
+  }
+  const normalizedQuestion = normalizeScreeningQuestion(options.question);
+  const bypass = bypassOutcome(session, options, normalizedQuestion);
+  if (bypass) {
+    return Promise.resolve(bypass);
+  }
+  const reattached = session.reattachedAdviceFor(normalizedQuestion);
+  if (reattached) {
+    session.recordJevFilterSkipped(true, normalizedQuestion);
+    return Promise.resolve({
+      decision: "skip",
+      kind: "repeat",
+      reason: "already answered earlier in this session",
+      reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES)
+    });
+  }
+  return screenWithJev(ctx, session, options, deps, normalizedQuestion);
+};
+var bypassOutcome = (session, options, normalizedQuestion) => {
+  const lastSkip = session.lastJevSkip;
+  if (options.force) {
+    if (lastSkip?.normalizedQuestion !== undefined && lastSkip.normalizedQuestion === normalizedQuestion) {
+      session.recordJevFilterOverride();
+    }
+    return allow();
+  }
+  if (normalizedQuestion !== undefined && lastSkip?.normalizedQuestion === normalizedQuestion && session.sessionTurnOrdinal - lastSkip.turn <= advisorJevFilterOverrideWindowRef) {
+    session.recordJevFilterOverride();
+    return allow();
+  }
+  return;
+};
+var screenWithJev = async (ctx, session, options, deps, normalizedQuestion) => {
+  const credentials = await (deps.resolveTransport ?? resolveJevTransport)(ctx);
+  if (!credentials) {
+    session.recordJevFilterFailure();
+    notifyOutageOnce(ctx, "missing-key", "No Jev credentials resolved (no TypeSafe key and no OpenRouter login).");
+    return allow();
+  }
+  if (credentials.source === "advisor-json") {
+    const warning = consumePlaintextKeyWarning();
+    if (warning && ctx.hasUI) {
+      ctx.ui.notify(warning, "warning");
+    }
+  }
+  const client = new JevClient({
+    apiKey: credentials.apiKey,
+    ...deps.fetch ? { fetch: deps.fetch } : {},
+    model: advisorJevModelRef,
+    timeoutMs: advisorJevTimeoutMsRef,
+    transport: credentials.transport
+  });
+  try {
+    const result = await client.ask(buildJevState(ctx, options), screeningQuestions, options.signal);
+    session.recordJevFilterUsage(result.usage);
+    const verdict = composeScreeningVerdict(result.answers, {
+      noulMargin: advisorJevFilterNoulMarginRef,
+      skipConfidence: advisorJevFilterSkipConfidenceRef
+    });
+    if (verdict.skip) {
+      session.recordJevFilterSkipped(false, normalizedQuestion);
+      return {
+        decision: "skip",
+        kind: "screened",
+        reason: "low stakes and resolvable without a consultation"
+      };
+    }
+    session.recordJevFilterAllowed();
+    return allow();
+  } catch (error) {
+    session.recordJevFilterFailure();
+    if (error instanceof JevFailure) {
+      notifyOutageOnce(ctx, error.category, error.message);
+    } else if (options.signal?.aborted) {
+      throw error;
+    } else {
+      notifyOutageOnce(ctx, "error", error instanceof Error ? error.message : String(error));
+    }
+    return allow();
+  }
+};
+var screeningSkipText = (outcome) => outcome.kind === "repeat" && outcome.reattachedAdvice ? repeatSkipText(outcome.reattachedAdvice) : SCREENED_SKIP_TEXT;
+
 // src/commands/manual-consultation.ts
 var startManualConsultation = (runtime, ctx, question, controller, scoutStatusToken, progress, gitContext) => {
   herdrAdvisorActivity.start();
@@ -4394,7 +5005,7 @@ var startManualConsultation = (runtime, ctx, question, controller, scoutStatusTo
       progress.phase = "active";
       runtime.requestManualRender(ctx);
     }
-  }, gitContext).then(({ markdown, usage }) => {
+  }, gitContext).then(({ adviceId, markdown, usage }) => {
     if (controller.signal.aborted) {
       return;
     }
@@ -4408,10 +5019,13 @@ var startManualConsultation = (runtime, ctx, question, controller, scoutStatusTo
       trigger: "manual",
       usage
     });
+    if (typeof adviceId === "string") {
+      runtime.advisorSessionState.issueAdvice(adviceId, markdown, "manual", false, normalizeScreeningQuestion(question));
+    }
     runtime.updateAdvisorUsageStatus(ctx);
     const normalizedUsage = snapshotAdvisorUsage(usage);
     runtime.pi.sendMessage({
-      content: `Manual Advisor consultation${question ? ` (${question})` : ""}:
+      content: `Manual Advisor consultation${question ? ` (${question})` : ""} — for your awareness; no action or follow-up consultation is needed unless the user asks:
 
 ${markdown}`,
       customType: "advisor-manual-result",
@@ -4747,7 +5361,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 // node_modules/@typesafe-ai/sdk/dist/index.mjs
-var range = (from, to) => Array.from({ length: to - from }, (_, i) => from + i);
+var range2 = (from, to) => Array.from({ length: to - from }, (_, i) => from + i);
 var DEFAULT_RETRY_POLICY = {
   maxRetries: 2,
   backoffInitialMs: 500,
@@ -4756,7 +5370,7 @@ var DEFAULT_RETRY_POLICY = {
   httpStatuses: /* @__PURE__ */ new Set([
     408,
     429,
-    ...range(500, 600)
+    ...range2(500, 600)
   ]),
   respectRetryAfter: true,
   maxRetryAfterMs: 60000,
@@ -4788,425 +5402,6 @@ var describeRuntime = () => {
   return "unknown";
 };
 var RUNTIME = describeRuntime();
-
-// src/jev/client.ts
-class JevFailure extends Error {
-  category;
-  constructor(category, message) {
-    super(message);
-    this.name = "JevFailure";
-    this.category = category;
-  }
-}
-var ENDPOINTS = {
-  openrouter: "https://openrouter.ai/api/alpha/decisions",
-  typesafe: "https://api.typesafe.ai/v1/systemone"
-};
-var RETRYABLE_STATUSES = new Set([408, 429, ...range2(500, 599)]);
-var RETRY_BACKOFF_MS = 250;
-var MAX_ATTEMPTS = 2;
-function range2(from, to) {
-  return Array.from({ length: to - from + 1 }, (_, index) => from + index);
-}
-var finiteTokens = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
-var errorDetail = (error) => {
-  if (typeof error === "string") {
-    return error;
-  }
-  if (error && typeof error === "object" && "message" in error) {
-    return String(error.message);
-  }
-  return "";
-};
-var statusCategory = (status) => {
-  if (status === 401 || status === 403) {
-    return "auth";
-  }
-  if (status === 400 || status === 422) {
-    return "malformed";
-  }
-  return "error";
-};
-var openRouterModelId = (model) => model.includes("/") ? model : `~typesafe/${model}`;
-
-class JevClient {
-  #apiKey;
-  #endpoint;
-  #fetch;
-  #model;
-  #pricePerMtok;
-  #timeoutMs;
-  constructor({
-    apiKey,
-    fetch,
-    model,
-    pricePerMtok,
-    timeoutMs,
-    transport
-  }) {
-    this.#apiKey = apiKey;
-    this.#endpoint = ENDPOINTS[transport];
-    this.#fetch = fetch ?? globalThis.fetch.bind(globalThis);
-    this.#model = transport === "openrouter" ? openRouterModelId(model) : model;
-    this.#pricePerMtok = pricePerMtok;
-    this.#timeoutMs = timeoutMs;
-  }
-  async ask(state, questions, signal) {
-    const deadline = new AbortController;
-    const abortFromCaller = () => deadline.abort(signal?.reason);
-    signal?.addEventListener("abort", abortFromCaller, { once: true });
-    if (signal?.aborted) {
-      abortFromCaller();
-    }
-    let deadlineHit = false;
-    const timer = setTimeout(() => {
-      deadlineHit = true;
-      deadline.abort(new Error("Jev wall-time budget elapsed"));
-    }, this.#timeoutMs);
-    timer.unref?.();
-    const body = JSON.stringify({
-      model: this.#model,
-      questions,
-      state
-    });
-    try {
-      let outcome = {};
-      for (let attempt = 1;; attempt += 1) {
-        outcome = await this.#attempt(body, deadline.signal);
-        if (!outcome.retryable || attempt >= MAX_ATTEMPTS) {
-          break;
-        }
-        await this.#backoff(deadline.signal);
-        if (deadline.signal.aborted) {
-          break;
-        }
-      }
-      return this.#settle(outcome, deadlineHit, signal);
-    } catch (error) {
-      if (signal?.aborted && !deadlineHit) {
-        throw error;
-      }
-      if (error instanceof JevFailure) {
-        throw error;
-      }
-      const message = redactSecrets(error instanceof Error ? error.message : String(error));
-      throw deadlineHit ? new JevFailure("timeout", `Jev call exceeded its ${this.#timeoutMs} ms wall-time budget.`) : new JevFailure("error", message);
-    } finally {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abortFromCaller);
-    }
-  }
-  #settle(outcome, deadlineHit, signal) {
-    if (outcome.answers) {
-      return this.#result(outcome);
-    }
-    if (deadlineHit && outcome.failure?.category !== "auth") {
-      throw new JevFailure("timeout", `Jev call exceeded its ${this.#timeoutMs} ms wall-time budget.`);
-    }
-    if (outcome.failure) {
-      throw outcome.failure;
-    }
-    if (signal?.aborted) {
-      throw new Error("Jev call aborted by the caller.");
-    }
-    throw new JevFailure("error", "Jev call failed.");
-  }
-  async#backoff(signal) {
-    if (signal.aborted) {
-      return;
-    }
-    await new Promise((resolve) => {
-      const timer = setTimeout(resolve, RETRY_BACKOFF_MS);
-      timer.unref?.();
-      const onAbort = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    });
-  }
-  async#attempt(body, signal) {
-    if (signal.aborted) {
-      return { retryable: false };
-    }
-    let response;
-    try {
-      response = await this.#fetch(this.#endpoint, {
-        body,
-        headers: {
-          authorization: `Bearer ${this.#apiKey}`,
-          "content-type": "application/json"
-        },
-        method: "POST",
-        signal
-      });
-    } catch (error) {
-      if (signal.aborted) {
-        return { retryable: false };
-      }
-      return {
-        retryable: true,
-        ...this.#connectionFailure(error)
-      };
-    }
-    if (response.ok) {
-      return this.#parseSuccess(response);
-    }
-    const failure = await this.#failureFromStatus(response);
-    return {
-      failure,
-      retryable: RETRYABLE_STATUSES.has(response.status)
-    };
-  }
-  #connectionFailure(error) {
-    const message = redactSecrets(error instanceof Error ? error.message : String(error));
-    return {
-      failure: new JevFailure("network", `Jev connection failed: ${message}`)
-    };
-  }
-  async#failureFromStatus(response) {
-    let detail = "";
-    try {
-      const parsed = await response.json();
-      const error = parsed?.error;
-      detail = errorDetail(error);
-    } catch {
-      detail = "";
-    }
-    const message = redactSecrets(`Jev ${this.#transportLabel()} request failed with HTTP ${response.status}${detail ? `: ${detail}` : ""}.`);
-    return new JevFailure(statusCategory(response.status), message);
-  }
-  #transportLabel() {
-    return this.#endpoint === ENDPOINTS.openrouter ? "OpenRouter" : "TypeSafe";
-  }
-  async#parseSuccess(response) {
-    let parsed;
-    try {
-      parsed = await response.json();
-    } catch (error) {
-      return {
-        failure: new JevFailure("malformed", `Jev response was not JSON: ${redactSecrets(error instanceof Error ? error.message : String(error))}`)
-      };
-    }
-    const record = parsed;
-    if (!record || typeof record !== "object" || !record.answers || typeof record.answers !== "object") {
-      return {
-        failure: new JevFailure("malformed", "Jev response did not include an answers object.")
-      };
-    }
-    return {
-      answers: record.answers,
-      model: typeof record.model === "string" ? record.model : this.#model,
-      usage: record.usage
-    };
-  }
-  #result(outcome) {
-    const usage = outcome.usage;
-    const inputTokens = finiteTokens(usage?.input_tokens);
-    const outputTokens = finiteTokens(usage?.output_tokens);
-    const price = this.#pricePerMtok ?? advisorJevPricePerMtokRef;
-    return {
-      answers: outcome.answers ?? {},
-      model: outcome.model ?? this.#model,
-      usage: {
-        cost: inputTokens / 1e6 * price,
-        inputTokens,
-        outputTokens
-      }
-    };
-  }
-}
-
-// src/jev/key-store.ts
-import {
-  chmodSync,
-  existsSync as existsSync3,
-  readFileSync as readFileSync3,
-  rmSync,
-  writeFileSync as writeFileSync2
-} from "node:fs";
-import { join as join4 } from "node:path";
-import { getAgentDir as getAgentDir3 } from "@earendil-works/pi-coding-agent";
-var TYPESAFE_KEY_ENV_VAR = "TYPESAFE_API_KEY";
-var TYPESAFE_KEY_SERVICE = "pi-advisor";
-var TYPESAFE_KEY_NAME = "typesafe-api-key";
-var TYPESAFE_KEY_CONFIG_FIELD = "typesafe_api_key";
-var KEY_FILE_MODE = 384;
-var keyFilePath = () => join4(getAgentDir3(), "typesafe_api_key");
-var runtimeSecrets = () => globalThis.Bun?.secrets;
-var normalizeKey = (value) => value?.trim() || undefined;
-var readAdvisorJsonConfig = () => readExistingConfig(join4(getAgentDir3(), "advisor.json"));
-var defaultReadFileStore = () => {
-  try {
-    return normalizeKey(readFileSync3(keyFilePath(), "utf8"));
-  } catch {
-    return;
-  }
-};
-var defaultWriteFileStore = (key) => {
-  const path = keyFilePath();
-  writeFileSync2(path, `${key}
-`, { mode: KEY_FILE_MODE });
-  chmodSync(path, KEY_FILE_MODE);
-};
-var defaultDeleteFileStore = () => {
-  rmSync(keyFilePath(), { force: true });
-};
-var messageOf = (error) => redactSecrets(error instanceof Error ? error.message : String(error));
-var resolveTypeSafeKey = async (deps = {}) => {
-  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
-  if (secrets) {
-    try {
-      const stored = normalizeKey(await secrets.get({
-        name: TYPESAFE_KEY_NAME,
-        service: TYPESAFE_KEY_SERVICE
-      }));
-      if (stored) {
-        return { key: stored, source: "bun-secrets" };
-      }
-    } catch {}
-  }
-  const env = deps.env ?? process.env;
-  const fromEnv = normalizeKey(env[TYPESAFE_KEY_ENV_VAR]);
-  if (fromEnv) {
-    return { key: fromEnv, source: "env" };
-  }
-  const readFileStore = deps.readFileStore ?? defaultReadFileStore;
-  const fromFile = normalizeKey(readFileStore());
-  if (fromFile) {
-    return { key: fromFile, source: "file" };
-  }
-  const config = (deps.readAdvisorJson ?? readAdvisorJsonConfig)();
-  const staged = config[TYPESAFE_KEY_CONFIG_FIELD];
-  if (typeof staged === "string") {
-    const fromConfig = normalizeKey(staged);
-    if (fromConfig) {
-      return { key: fromConfig, source: "advisor-json" };
-    }
-  }
-  return {};
-};
-var writeKeyTypeSafeKey = async (key, deps = {}) => {
-  const normalized = normalizeKey(key);
-  if (!normalized) {
-    return { message: "The key is empty.", ok: false };
-  }
-  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
-  if (secrets) {
-    try {
-      await secrets.set({
-        name: TYPESAFE_KEY_NAME,
-        service: TYPESAFE_KEY_SERVICE,
-        value: normalized
-      });
-      return { message: "Key stored in Bun.secrets.", ok: true };
-    } catch (error) {
-      return {
-        message: `Storing the key in Bun.secrets failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
-        ok: false
-      };
-    }
-  }
-  try {
-    (deps.writeFileStore ?? defaultWriteFileStore)(normalized);
-    return {
-      message: "Key stored in ~/.pi/agent/typesafe_api_key (mode 0600).",
-      ok: true
-    };
-  } catch (error) {
-    return {
-      message: `Storing the key failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
-      ok: false
-    };
-  }
-};
-var clearKeyTypeSafeKey = async (deps = {}) => {
-  let clearedSomething = false;
-  let firstError;
-  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
-  if (secrets) {
-    try {
-      await secrets.delete({
-        name: TYPESAFE_KEY_NAME,
-        service: TYPESAFE_KEY_SERVICE
-      });
-      clearedSomething = true;
-    } catch (error) {
-      firstError = messageOf(error);
-    }
-  }
-  try {
-    if (existsSync3(keyFilePath())) {
-      defaultDeleteFileStore();
-    }
-    clearedSomething = true;
-  } catch (error) {
-    firstError ??= messageOf(error);
-  }
-  if (firstError) {
-    return {
-      message: `Clearing the stored key failed: ${firstError}.`,
-      ok: false
-    };
-  }
-  return {
-    message: `Stored key cleared.${clearedSomething ? "" : ` Nothing was stored; unset ${TYPESAFE_KEY_ENV_VAR} and remove ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json yourself if you use them.`}`,
-    ok: true
-  };
-};
-var removeTypeSafeKeyFromAdvisorJson = () => {
-  try {
-    const path = join4(getAgentDir3(), "advisor.json");
-    const existing = readExistingConfig(path);
-    if (!(TYPESAFE_KEY_CONFIG_FIELD in existing)) {
-      return { message: "No plaintext key in advisor.json.", ok: true };
-    }
-    delete existing[TYPESAFE_KEY_CONFIG_FIELD];
-    writeFileSync2(path, `${JSON.stringify(existing, null, 2)}
-`);
-    resetConfigCache();
-    return { message: "Plaintext key removed from advisor.json.", ok: true };
-  } catch (error) {
-    return {
-      message: `Removing the plaintext key failed: ${messageOf(error)}.`,
-      ok: false
-    };
-  }
-};
-var warnedPlaintextKey = false;
-var consumePlaintextKeyWarning = () => {
-  if (warnedPlaintextKey) {
-    return;
-  }
-  warnedPlaintextKey = true;
-  return `Advisor is using a plaintext ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json; this is not recommended. Open /advisor-settings → Jev consultation filter to migrate it into a secure store, or use the ${TYPESAFE_KEY_ENV_VAR} environment variable.`;
-};
-
-// src/jev/transport.ts
-var OPENROUTER_PROVIDER = "openrouter";
-var openRouterKey = async (ctx, deps) => {
-  const key = deps.getProviderKey ? await deps.getProviderKey(OPENROUTER_PROVIDER) : await ctx?.modelRegistry?.getApiKeyForProvider(OPENROUTER_PROVIDER);
-  return key?.trim() || undefined;
-};
-var resolveJevTransport = async (ctx, deps = {}) => {
-  const preference = advisorJevTransportRef;
-  if (preference !== "openrouter") {
-    const resolveTypesafe = deps.resolveTypesafe ?? resolveTypeSafeKey;
-    const resolution = await resolveTypesafe();
-    if (resolution.key) {
-      return {
-        apiKey: resolution.key,
-        ...resolution.source ? { source: resolution.source } : {},
-        transport: "typesafe"
-      };
-    }
-  }
-  if (preference === "typesafe") {
-    return;
-  }
-  const openrouter = await openRouterKey(ctx, deps);
-  return openrouter ? { apiKey: openrouter, transport: "openrouter" } : undefined;
-};
 
 // src/ui/masked-input.ts
 import {
@@ -6349,196 +6544,6 @@ var appendOutcome = async (record) => {
     return next;
   });
 };
-
-// src/jev/questions.ts
-var STAKES_RUBRIC = [
-  "Negligible: routine, low-risk, mechanical, or reversible; a wrong call costs little and is easy to undo.",
-  "Moderate: some risk or rework, but bounded and recoverable.",
-  "High: material consequences for correctness, security, cost, user trust, or irreversibility."
-];
-var EVIDENCE_RULE = "Judge from `executor_question` and `executor_draft` when present, otherwise from `recent_conversation`; when both are absent, `recent_conversation` is the evidence to judge from.";
-var screeningQuestions = {
-  self_answerable: {
-    criteria: {
-      false: "The executor needs the Advisor's second opinion.",
-      true: "The executor can resolve this alone with available tools and context."
-    },
-    instructions: `Can the executor confidently resolve this request alone, using available tools and context? ${EVIDENCE_RULE}`,
-    type: "noul"
-  },
-  stakes: {
-    criteria: [...STAKES_RUBRIC],
-    instructions: `How material are the stakes of the decision behind this consultation request? ${EVIDENCE_RULE}`,
-    type: "score"
-  }
-};
-var NUMERIC_KEY_PATTERN = /^\d+$/;
-var isRecord2 = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
-var finiteNumber = (value) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
-var lowestStakesProbability = (answer) => {
-  if (!isRecord2(answer)) {
-    return;
-  }
-  const probabilities = isRecord2(answer.probabilities) ? answer.probabilities : {};
-  const legend = isRecord2(answer.legend) ? answer.legend : undefined;
-  if (legend) {
-    const exact = Object.keys(legend).find((key) => legend[key] === STAKES_RUBRIC[0]);
-    if (exact) {
-      return finiteNumber(probabilities[exact]);
-    }
-  }
-  const numericKeys = Object.keys(probabilities).filter((key) => NUMERIC_KEY_PATTERN.test(key));
-  if (numericKeys.length === 0) {
-    return;
-  }
-  const lowest = numericKeys.reduce((left, right) => Number(left) <= Number(right) ? left : right);
-  return finiteNumber(probabilities[lowest]);
-};
-var selfAnswerableNoul = (answer) => isRecord2(answer) ? finiteNumber(answer.noul) : undefined;
-var composeScreeningVerdict = (answers, { noulMargin, skipConfidence }) => {
-  if (!isRecord2(answers)) {
-    return { skip: false };
-  }
-  const negligibleMass = lowestStakesProbability(answers.stakes);
-  const noul = selfAnswerableNoul(answers.self_answerable);
-  if (negligibleMass === undefined || noul === undefined) {
-    return { skip: false };
-  }
-  const confidentlySelfAnswerable = noul >= 0.5 + noulMargin;
-  return {
-    skip: negligibleMass >= skipConfidence && confidentlySelfAnswerable
-  };
-};
-var composeTurnGateVerdict = (answers, threshold) => {
-  if (!isRecord2(answers)) {
-    return false;
-  }
-  const answer = answers.should_consult;
-  const noul = isRecord2(answer) ? finiteNumber(answer.noul) : undefined;
-  return noul !== undefined && noul >= threshold;
-};
-
-// src/jev/state.ts
-var JEV_TEXT_CAP_BYTES = 8 * 1024;
-var buildJevState = (ctx, input = {}) => {
-  const state = { role: "executor" };
-  if (input.question) {
-    state.executor_question = redactAndCapText(input.question, JEV_TEXT_CAP_BYTES, advisorRedactSecretsRef);
-  }
-  if (input.draft) {
-    state.executor_draft = redactAndCapText(input.draft, JEV_TEXT_CAP_BYTES, advisorRedactSecretsRef);
-  }
-  const digest = recentConversation(ctx, advisorJevDigestMaxCharsRef);
-  if (digest) {
-    state.recent_conversation = digest;
-  }
-  return state;
-};
-
-// src/tools/jev-filter.ts
-var normalizeScreeningQuestion = (question) => question?.trim().toLowerCase().replace(/\s+/g, " ") || undefined;
-var REATTACHED_ADVICE_CAP_BYTES = 4 * 1024;
-var SCREENED_SKIP_TEXT = "Advisor consultation skipped (screened out): the stakes are low and you can resolve this yourself with available tools and context. Proceed on your own judgment with what you already have.";
-var repeatSkipText = (advice) => `Advisor consultation skipped (already answered): this question was answered earlier in this session; the earlier advice is reattached below. Consult again only if the situation has materially changed.
-
-${advice}`;
-var lastNotifiedOutage;
-var notifyOutageOnce = (ctx, category, message) => {
-  const key = `${category}:${message}`;
-  if (key === lastNotifiedOutage) {
-    return;
-  }
-  lastNotifiedOutage = key;
-  if (ctx.hasUI) {
-    ctx.ui.notify(`Advisor Jev filter failed (${category}); allowing consultations. ${message}`, "warning");
-  }
-};
-var allow = () => ({ decision: "allow" });
-var screenConsultation = (ctx, session, options, deps = {}) => {
-  if (!advisorJevFilterEnabledRef || isSimpleMode()) {
-    return Promise.resolve(allow());
-  }
-  const normalizedQuestion = normalizeScreeningQuestion(options.question);
-  const bypass = bypassOutcome(session, options, normalizedQuestion);
-  if (bypass) {
-    return Promise.resolve(bypass);
-  }
-  const reattached = session.reattachedAdviceFor(normalizedQuestion);
-  if (reattached) {
-    session.recordJevFilterSkipped(true, normalizedQuestion);
-    return Promise.resolve({
-      decision: "skip",
-      kind: "repeat",
-      reason: "already answered earlier in this session",
-      reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES)
-    });
-  }
-  return screenWithJev(ctx, session, options, deps, normalizedQuestion);
-};
-var bypassOutcome = (session, options, normalizedQuestion) => {
-  const lastSkip = session.lastJevSkip;
-  if (options.force) {
-    if (lastSkip?.normalizedQuestion !== undefined && lastSkip.normalizedQuestion === normalizedQuestion) {
-      session.recordJevFilterOverride();
-    }
-    return allow();
-  }
-  if (normalizedQuestion !== undefined && lastSkip?.normalizedQuestion === normalizedQuestion && session.sessionTurnOrdinal - lastSkip.turn <= advisorJevFilterOverrideWindowRef) {
-    session.recordJevFilterOverride();
-    return allow();
-  }
-  return;
-};
-var screenWithJev = async (ctx, session, options, deps, normalizedQuestion) => {
-  const credentials = await (deps.resolveTransport ?? resolveJevTransport)(ctx);
-  if (!credentials) {
-    session.recordJevFilterFailure();
-    notifyOutageOnce(ctx, "missing-key", "No Jev credentials resolved (no TypeSafe key and no OpenRouter login).");
-    return allow();
-  }
-  if (credentials.source === "advisor-json") {
-    const warning = consumePlaintextKeyWarning();
-    if (warning && ctx.hasUI) {
-      ctx.ui.notify(warning, "warning");
-    }
-  }
-  const client = new JevClient({
-    apiKey: credentials.apiKey,
-    ...deps.fetch ? { fetch: deps.fetch } : {},
-    model: advisorJevModelRef,
-    timeoutMs: advisorJevTimeoutMsRef,
-    transport: credentials.transport
-  });
-  try {
-    const result = await client.ask(buildJevState(ctx, options), screeningQuestions, options.signal);
-    session.recordJevFilterUsage(result.usage);
-    const verdict = composeScreeningVerdict(result.answers, {
-      noulMargin: advisorJevFilterNoulMarginRef,
-      skipConfidence: advisorJevFilterSkipConfidenceRef
-    });
-    if (verdict.skip) {
-      session.recordJevFilterSkipped(false, normalizedQuestion);
-      return {
-        decision: "skip",
-        kind: "screened",
-        reason: "low stakes and resolvable without a consultation"
-      };
-    }
-    session.recordJevFilterAllowed();
-    return allow();
-  } catch (error) {
-    session.recordJevFilterFailure();
-    if (error instanceof JevFailure) {
-      notifyOutageOnce(ctx, error.category, error.message);
-    } else if (options.signal?.aborted) {
-      throw error;
-    } else {
-      notifyOutageOnce(ctx, "error", error instanceof Error ? error.message : String(error));
-    }
-    return allow();
-  }
-};
-var screeningSkipText = (outcome) => outcome.kind === "repeat" && outcome.reattachedAdvice ? repeatSkipText(outcome.reattachedAdvice) : SCREENED_SKIP_TEXT;
 
 // src/tools/gate-policy.ts
 var updateAdvisorUsageStatus = (ctx, session) => {

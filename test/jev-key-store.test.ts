@@ -14,6 +14,9 @@ import {
 const fileStoreSpy = () => {
   const written: string[] = [];
   return {
+    deleteFileStore: () => {
+      written.pop();
+    },
     files: written,
     readFileStore: () => written.at(-1),
     writeFileStore: (key: string) => written.push(key),
@@ -55,6 +58,7 @@ describe("resolveTypeSafeKey", () => {
     const resolution = await resolveTypeSafeKey({
       env: { TYPESAFE_API_KEY: "env-key" },
       readAdvisorJson: () => ({ typesafe_api_key: "config-key" }),
+      readFileStore: () => undefined,
       secrets: memorySecrets(
         new Map([["pi-advisor/typesafe-api-key", "stored-key"]])
       ),
@@ -66,6 +70,7 @@ describe("resolveTypeSafeKey", () => {
     const resolution = await resolveTypeSafeKey({
       env: { TYPESAFE_API_KEY: "  env-key \n" },
       readAdvisorJson: () => ({ typesafe_api_key: "config-key" }),
+      readFileStore: () => undefined,
       secrets: memorySecrets(),
     });
     expect(resolution).toEqual({ key: "env-key", source: "env" });
@@ -75,6 +80,7 @@ describe("resolveTypeSafeKey", () => {
     const resolution = await resolveTypeSafeKey({
       env: {},
       readAdvisorJson: () => ({ typesafe_api_key: " config-key\n" }),
+      readFileStore: () => undefined,
       secrets: null,
     });
     expect(resolution).toEqual({ key: "config-key", source: "advisor-json" });
@@ -120,6 +126,7 @@ describe("resolveTypeSafeKey", () => {
     const resolution = await resolveTypeSafeKey({
       env: {},
       readAdvisorJson: () => ({ typesafe_api_key: 42 }),
+      readFileStore: () => undefined,
       secrets: null,
     });
     expect(resolution).toEqual({});
@@ -131,8 +138,10 @@ describe("writeKeyTypeSafeKey", () => {
     const agentDir = mkdtempSync(join(tmpdir(), "pi-advisor-keystore-"));
     try {
       const secrets = memorySecrets();
+      const files = fileStoreSpy();
       const result = await writeKeyTypeSafeKey("  pasted-key \n", {
         env: {},
+        ...files,
         readAdvisorJson: () => ({}),
         secrets,
       });
@@ -177,6 +186,7 @@ describe("writeKeyTypeSafeKey", () => {
   test("surfaces a secret-store write failure redacted", async () => {
     const result = await writeKeyTypeSafeKey("key", {
       env: {},
+      ...fileStoreSpy(),
       readAdvisorJson: () => ({}),
       secrets: failingSecrets("write denied"),
     });
@@ -188,6 +198,7 @@ describe("writeKeyTypeSafeKey", () => {
   test("rejects an empty key", async () => {
     const result = await writeKeyTypeSafeKey("  \n", {
       env: {},
+      ...fileStoreSpy(),
       readAdvisorJson: () => ({}),
       secrets: memorySecrets(),
     });
@@ -202,6 +213,7 @@ describe("clearKeyTypeSafeKey", () => {
     );
     const result = await clearKeyTypeSafeKey({
       env: {},
+      ...fileStoreSpy(),
       readAdvisorJson: () => ({}),
       secrets,
     });
@@ -212,6 +224,7 @@ describe("clearKeyTypeSafeKey", () => {
   test("clears the stored file even without a secret store", async () => {
     const result = await clearKeyTypeSafeKey({
       env: { TYPESAFE_API_KEY: "env-key" },
+      ...fileStoreSpy(),
       readAdvisorJson: () => ({}),
       secrets: null,
     });

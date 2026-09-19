@@ -35,6 +35,8 @@ export interface JevSecretsLike {
 }
 
 export interface JevKeyStoreDeps {
+  /** Deletes the extension-managed key file; injectable for tests. */
+  deleteFileStore?: () => void;
   env?: Record<string, string | undefined>;
   readAdvisorJson?: () => Record<string, unknown>;
   /** Reads the extension-managed 0600 key file; injectable for tests. */
@@ -191,7 +193,9 @@ export const clearKeyTypeSafeKey = async (
     }
   }
   try {
-    if (existsSync(keyFilePath())) {
+    if (deps.deleteFileStore) {
+      deps.deleteFileStore();
+    } else if (existsSync(keyFilePath())) {
       defaultDeleteFileStore();
     }
     clearedSomething = true;

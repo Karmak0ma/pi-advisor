@@ -282,6 +282,43 @@ describe("Advisor loop-gate budget behavior", () => {
     });
   });
 
+  test("manual consultations register their question and announce informational intent", async () => {
+    await withAgentDir({}, async () => {
+      const commands = new Map<string, any>();
+      const sent: any[] = [];
+      const state = new AdvisorSessionState();
+      registerCommands(
+        mockPi(
+          { commands, sent },
+          {
+            sendMessage: (message: unknown) => sent.push(message),
+          }
+        ),
+        {
+          consult: () =>
+            Promise.resolve({
+              adviceId: "manual-1",
+              markdown: "The answer is 4.",
+              thinkingText: "",
+            }),
+          sessionState: state,
+        }
+      );
+      await commands
+        .get("advisor-manual")
+        .handler("what is 2+2?", { cwd: "/", hasUI: false } as any);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(state.reattachedAdviceFor("what is 2+2?")).toBe(
+        "The answer is 4."
+      );
+      const content = sent.find(
+        (message) => message.customType === "advisor-manual-result"
+      )?.content as string;
+      expect(content).toContain("for your awareness");
+      expect(content).toContain("no action or follow-up consultation");
+    });
+  });
+
   test("reserves ask_advisor without consuming its budget", () => {
     const events = new Map<string, any>();
     registerAdvisorTool(

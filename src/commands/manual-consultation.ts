@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { advisorRef } from "../config/state.ts";
 import type { GitContextLevel } from "../git.ts";
 import { herdrAdvisorActivity, notifyHerdrAdvisorFailure } from "../herdr.ts";
+import { normalizeScreeningQuestion } from "../tools/jev-filter.ts";
 import { appendScoutLifecycleEntry } from "../tools/scout-status.ts";
 import type { ScoutToolDetails } from "../tools/types.ts";
 import { advisorUsageCost, snapshotAdvisorUsage } from "../usage.ts";
@@ -63,7 +64,7 @@ export const startManualConsultation = (
       },
       gitContext
     )
-    .then(({ markdown, usage }) => {
+    .then(({ adviceId, markdown, usage }) => {
       if (controller.signal.aborted) {
         return;
       }
@@ -77,11 +78,22 @@ export const startManualConsultation = (
         trigger: "manual",
         usage,
       });
+      if (typeof adviceId === "string") {
+        // Registering the manual question lets an identical later ask_advisor
+        // hit repeat detection instead of re-consulting.
+        runtime.advisorSessionState.issueAdvice(
+          adviceId,
+          markdown,
+          "manual",
+          false,
+          normalizeScreeningQuestion(question)
+        );
+      }
       runtime.updateAdvisorUsageStatus(ctx);
       const normalizedUsage = snapshotAdvisorUsage(usage);
       runtime.pi.sendMessage(
         {
-          content: `Manual Advisor consultation${question ? ` (${question})` : ""}:\n\n${markdown}`,
+          content: `Manual Advisor consultation${question ? ` (${question})` : ""} — for your awareness; no action or follow-up consultation is needed unless the user asks:\n\n${markdown}`,
           customType: "advisor-manual-result",
           details: {
             advisor: advisorRef,
