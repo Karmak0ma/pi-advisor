@@ -1,6 +1,6 @@
 {
   "name": "pi-advisor-flow",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Advanced Executor/Advisor flow for Pi, fully configurable and extendable.",
   "keywords": [
     "pi-package",

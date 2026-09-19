@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
-## Unreleased
+## 0.7.0 - 2026-09-19
 
 ### Added
 
@@ -12,7 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Proactive turn gate** — pi-advisor can now notice when the Executor has worked through several turns without any advice. Every N turns, one quick Jev check asks whether a senior second opinion is warranted right now; on a confident yes the Advisor consults and its advice is delivered to the Executor between turns. Also off by default.
 - **One-step setup** — open `/advisor-settings` → *Jev consultation filter* for guided setup: it verifies your access with one live call before turning anything on. Either paste a TypeSafe API key (stored securely — in your system's secret store when available, otherwise a dedicated owner-only file under `~/.pi/agent/`) or skip keys entirely: with an existing OpenRouter login in Pi, Jev reuses it automatically. A hand-placed plaintext key in `advisor.json` keeps working read-only and can be migrated to secure storage from the same screen.
 - **Skip-aware accounting** — the Session Advisor Summary shows how many consultations were screened, skipped, or overridden, what the Jev checks cost, and a labelled upper-bound estimate of what the skips saved; skipped consultations never touch the Advisor-call budget.
-- `/advisor-manual` consultations are now remembered by their question: if the Executor later asks the Advisor the exact same thing, the earlier advice is reattached instead of running another consultation. This deduplication is instant, free, and works even with the Jev screening filter turned off; sessions without any Jev activity report it as `Consultation dedup:` in the summary. Thresholds, costs, and the turn-gate interval are tunable from the `Jev …` rows in `/advisor-settings` (the default Jev call timeout is provisional pending real-world measurements).
+- `/advisor-manual` consultations are now remembered by their question: if the Executor later asks the Advisor the exact same thing, the earlier advice is reattached instead of running another consultation. This deduplication is instant, free, and works even with the Jev screening filter turned off; sessions without any Jev activity report it as `Consultation dedup:` in the summary.
+- All Jev thresholds, costs, and the turn-gate interval are tunable from the `Jev …` rows in `/advisor-settings` without editing files. The default Jev call timeout is provisional pending real-world measurements.
 
 ### Changed
 
