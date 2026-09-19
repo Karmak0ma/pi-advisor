@@ -47,6 +47,7 @@ const expectedFiles = [
   "src/herdr.ts",
   "src/jev/client.ts",
   "src/jev/key-store.ts",
+  "src/jev/ledger.ts",
   "src/jev/questions.ts",
   "src/jev/state.ts",
   "src/jev/transport.ts",

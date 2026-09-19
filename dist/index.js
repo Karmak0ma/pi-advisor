@@ -3411,6 +3411,139 @@ var renderScoutDetails = (box, scout, expanded, theme) => {
   }
 };
 
+// src/jev/ledger.ts
+var freshJevUsage = () => ({
+  cost: 0,
+  inputTokens: 0,
+  outputTokens: 0
+});
+var freshJevLedger = () => ({
+  filter: {
+    allowed: 0,
+    failures: 0,
+    overrides: 0,
+    repeatSkipped: 0,
+    screened: 0,
+    skipped: 0
+  },
+  gate: { checks: 0, consultations: 0, failures: 0, usage: freshJevUsage() },
+  usage: freshJevUsage()
+});
+var addJevUsage = (totals, usage) => {
+  totals.cost += usage.cost;
+  totals.inputTokens += usage.inputTokens;
+  totals.outputTokens += usage.outputTokens;
+};
+
+class AdvisorJevLedgerState {
+  #ledger = freshJevLedger();
+  #lastSkip;
+  reset() {
+    this.#ledger = freshJevLedger();
+    this.#lastSkip = undefined;
+  }
+  get lastSkip() {
+    return this.#lastSkip;
+  }
+  recordFilterAllowed() {
+    this.#ledger.filter.allowed += 1;
+    this.#ledger.filter.screened += 1;
+  }
+  recordFilterSkipped(repeat, normalizedQuestion, turn) {
+    this.#ledger.filter.skipped += 1;
+    this.#ledger.filter.screened += 1;
+    if (repeat) {
+      this.#ledger.filter.repeatSkipped += 1;
+    }
+    this.#lastSkip = {
+      ...normalizedQuestion ? { normalizedQuestion } : {},
+      turn
+    };
+  }
+  recordFilterOverride() {
+    this.#ledger.filter.overrides += 1;
+  }
+  recordFilterFailure() {
+    this.#ledger.filter.failures += 1;
+  }
+  recordFilterUsage(usage) {
+    addJevUsage(this.#ledger.usage, usage);
+  }
+  recordGateCheck(usage) {
+    this.#ledger.gate.checks += 1;
+    if (usage) {
+      addJevUsage(this.#ledger.gate.usage, usage);
+    }
+  }
+  recordGateConsultation() {
+    this.#ledger.gate.consultations += 1;
+  }
+  recordGateFailure() {
+    this.#ledger.gate.failures += 1;
+  }
+  summaryLines(invocations) {
+    const lines = [];
+    const { filter, gate, usage } = this.#ledger;
+    const nonRepeatJevActivity = filter.allowed + (filter.skipped - filter.repeatSkipped) + filter.failures;
+    if (nonRepeatJevActivity === 0 && filter.repeatSkipped > 0) {
+      const parts = [
+        `${filter.repeatSkipped} repeat question${filter.repeatSkipped === 1 ? "" : "s"} skipped, earlier advice reattached`
+      ];
+      if (filter.overrides > 0) {
+        parts.push(`${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`);
+      }
+      lines.push(`Consultation dedup: ${parts.join(", ")}`);
+      lines.push(this.#savingsLine(this.#markdownCosts(invocations), filter.skipped));
+    } else if (this.#filterActive()) {
+      lines.push(this.#filterLine(filter));
+      const jevTokens = usage.inputTokens + usage.outputTokens;
+      if (jevTokens > 0) {
+        lines.push(`Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`);
+      }
+      if (filter.skipped > 0) {
+        lines.push(this.#savingsLine(this.#markdownCosts(invocations), filter.skipped));
+      }
+    }
+    if (gate.checks > 0 || gate.consultations > 0) {
+      lines.push(this.#gateLine(gate, invocations));
+    }
+    return lines;
+  }
+  #filterActive() {
+    const { filter } = this.#ledger;
+    return filter.screened > 0 || filter.overrides > 0 || filter.failures > 0;
+  }
+  #savingsLine(markdownCosts, skipped) {
+    if (markdownCosts.length === 0) {
+      return "Estimated saving from skips: unavailable — no observed consultation cost this session";
+    }
+    const mean = markdownCosts.reduce((sum, cost) => sum + cost, 0) / markdownCosts.length;
+    return `Estimated saving from skips: ≤ $${(mean * skipped).toFixed(4)} — upper bound; assumes each skipped consultation would have cost this session's mean allowed-consultation cost ($${mean.toFixed(4)}), which the skipped calls would likely have undercut`;
+  }
+  #gateLine(gate, invocations) {
+    const consultationCosts = invocations.filter((item) => item.trigger === "turn-gate" && typeof item.cost === "number").map((item) => item.cost);
+    const gateSpend = consultationCosts.reduce((sum, cost) => sum + cost, 0);
+    return `Turn gate: ${gate.checks} check${gate.checks === 1 ? "" : "s"} (Jev ${this.#formatJevTokens(gate.usage)} · $${gate.usage.cost.toFixed(4)}), ${gate.consultations} consultation${gate.consultations === 1 ? "" : "s"} ($${gateSpend.toFixed(4)})`;
+  }
+  #formatJevTokens(usage) {
+    return `↑${formatTokenCount(usage.inputTokens + usage.outputTokens)}`;
+  }
+  #markdownCosts(invocations) {
+    return invocations.filter((item) => item.kind === "markdown" && typeof item.cost === "number").map((item) => item.cost);
+  }
+  #filterLine(filter) {
+    const head = `${filter.screened} screened (${filter.allowed} allowed, ${filter.skipped} skipped${filter.repeatSkipped > 0 ? ` [${filter.repeatSkipped} repeat]` : ""})`;
+    const parts = [head];
+    if (filter.overrides > 0) {
+      parts.push(`${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`);
+    }
+    if (filter.failures > 0) {
+      parts.push(`${filter.failures} failure${filter.failures === 1 ? "" : "s"}`);
+    }
+    return `Jev filter: ${parts.join(", ")}`;
+  }
+}
+
 // src/session-state.ts
 var WHITESPACE = /\s/;
 var TIMESTAMP_KEYS = new Set([
@@ -3480,28 +3613,6 @@ var normalizeToolInput = (toolName, input) => {
   return visit(input);
 };
 var normalizedToolSignature = (toolName, input) => `${toolName}:${JSON.stringify(normalizeToolInput(toolName, input))}`;
-var freshJevUsage = () => ({
-  cost: 0,
-  inputTokens: 0,
-  outputTokens: 0
-});
-var freshJevLedger = () => ({
-  filter: {
-    allowed: 0,
-    failures: 0,
-    overrides: 0,
-    repeatSkipped: 0,
-    screened: 0,
-    skipped: 0
-  },
-  gate: { checks: 0, consultations: 0, failures: 0, usage: freshJevUsage() },
-  usage: freshJevUsage()
-});
-var addJevUsage = (totals, usage) => {
-  totals.cost += usage.cost;
-  totals.inputTokens += usage.inputTokens;
-  totals.outputTokens += usage.outputTokens;
-};
 var freshRepetition = () => ({
   count: 0,
   interventions: 0
@@ -3524,20 +3635,18 @@ class AdvisorSessionState {
   #ledger = freshAdviceLedger();
   #usage = freshUsage();
   #consumedCalls = 0;
-  #jev = freshJevLedger();
+  #jev = new AdvisorJevLedgerState;
   #sessionTurnOrdinal = 0;
   #turnsSinceConsultation = 0;
-  #lastSkip;
   resetTask() {
     this.#repetition = freshRepetition();
     this.#blockedReason = undefined;
     this.#ledger = freshAdviceLedger();
     this.#usage = freshUsage();
     this.#consumedCalls = 0;
-    this.#jev = freshJevLedger();
+    this.#jev.reset();
     this.#sessionTurnOrdinal = 0;
     this.#turnsSinceConsultation = 0;
-    this.#lastSkip = undefined;
   }
   clearBlocked() {
     this.#blockedReason = undefined;
@@ -3692,108 +3801,35 @@ class AdvisorSessionState {
     ].filter((trigger) => this.#countTrigger(trigger) > 0).join(", ") || "none";
   }
   recordJevFilterAllowed() {
-    this.#jev.filter.allowed += 1;
-    this.#jev.filter.screened += 1;
+    this.#jev.recordFilterAllowed();
   }
   recordJevFilterSkipped(repeat, normalizedQuestion) {
-    this.#jev.filter.skipped += 1;
-    this.#jev.filter.screened += 1;
-    if (repeat) {
-      this.#jev.filter.repeatSkipped += 1;
-    }
-    this.#lastSkip = {
-      ...normalizedQuestion ? { normalizedQuestion } : {},
-      turn: this.#sessionTurnOrdinal
-    };
+    this.#jev.recordFilterSkipped(repeat, normalizedQuestion, this.#sessionTurnOrdinal);
   }
   get lastJevSkip() {
-    return this.#lastSkip;
+    return this.#jev.lastSkip;
   }
   recordJevFilterOverride() {
-    this.#jev.filter.overrides += 1;
+    this.#jev.recordFilterOverride();
   }
   recordJevFilterFailure() {
-    this.#jev.filter.failures += 1;
+    this.#jev.recordFilterFailure();
   }
   recordJevFilterUsage(usage) {
-    addJevUsage(this.#jev.usage, usage);
+    this.#jev.recordFilterUsage(usage);
   }
   recordJevGateCheck(usage) {
-    this.#jev.gate.checks += 1;
-    if (usage) {
-      addJevUsage(this.#jev.gate.usage, usage);
-    }
+    this.#jev.recordGateCheck(usage);
   }
   recordJevGateConsultation() {
-    this.#jev.gate.consultations += 1;
+    this.#jev.recordGateConsultation();
   }
   recordJevGateFailure() {
-    this.#jev.gate.failures += 1;
-  }
-  #jevFilterActive() {
-    const { filter } = this.#jev;
-    return filter.screened > 0 || filter.overrides > 0 || filter.failures > 0;
-  }
-  #savingsLine(markdownCosts, skipped) {
-    if (markdownCosts.length === 0) {
-      return "Estimated saving from skips: unavailable — no observed consultation cost this session";
-    }
-    const mean = markdownCosts.reduce((sum, cost) => sum + cost, 0) / markdownCosts.length;
-    return `Estimated saving from skips: ≤ $${(mean * skipped).toFixed(4)} — upper bound; assumes each skipped consultation would have cost this session's mean allowed-consultation cost ($${mean.toFixed(4)}), which the skipped calls would likely have undercut`;
-  }
-  #gateLine(gate) {
-    const consultationCosts = this.#usage.invocations.filter((item) => item.trigger === "turn-gate" && typeof item.cost === "number").map((item) => item.cost);
-    const gateSpend = consultationCosts.reduce((sum, cost) => sum + cost, 0);
-    return `Turn gate: ${gate.checks} check${gate.checks === 1 ? "" : "s"} (Jev ${this.#formatJevTokens(gate.usage)} · $${gate.usage.cost.toFixed(4)}), ${gate.consultations} consultation${gate.consultations === 1 ? "" : "s"} ($${gateSpend.toFixed(4)})`;
-  }
-  #formatJevTokens(usage) {
-    return `↑${formatTokenCount(usage.inputTokens + usage.outputTokens)}`;
-  }
-  #jevSummaryLines() {
-    const lines = [];
-    const { filter, gate, usage } = this.#jev;
-    const nonRepeatJevActivity = filter.allowed + (filter.skipped - filter.repeatSkipped) + filter.failures;
-    if (nonRepeatJevActivity === 0 && filter.repeatSkipped > 0) {
-      const parts = [
-        `${filter.repeatSkipped} repeat question${filter.repeatSkipped === 1 ? "" : "s"} skipped, earlier advice reattached`
-      ];
-      if (filter.overrides > 0) {
-        parts.push(`${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`);
-      }
-      lines.push(`Consultation dedup: ${parts.join(", ")}`);
-      lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
-    } else if (this.#jevFilterActive()) {
-      lines.push(this.#filterLine(filter));
-      const jevTokens = usage.inputTokens + usage.outputTokens;
-      if (jevTokens > 0) {
-        lines.push(`Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`);
-      }
-      if (filter.skipped > 0) {
-        lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
-      }
-    }
-    if (gate.checks > 0 || gate.consultations > 0) {
-      lines.push(this.#gateLine(gate));
-    }
-    return lines;
-  }
-  #markdownCosts() {
-    return this.#usage.invocations.filter((item) => item.kind === "markdown" && typeof item.cost === "number").map((item) => item.cost);
-  }
-  #filterLine(filter) {
-    const head = `${filter.screened} screened (${filter.allowed} allowed, ${filter.skipped} skipped${filter.repeatSkipped > 0 ? ` [${filter.repeatSkipped} repeat]` : ""})`;
-    const parts = [head];
-    if (filter.overrides > 0) {
-      parts.push(`${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`);
-    }
-    if (filter.failures > 0) {
-      parts.push(`${filter.failures} failure${filter.failures === 1 ? "" : "s"}`);
-    }
-    return `Jev filter: ${parts.join(", ")}`;
+    this.#jev.recordGateFailure();
   }
   summary(limit) {
     const { invocations, totals } = this.#usage;
-    const jevLines = this.#jevSummaryLines();
+    const jevLines = this.#jev.summaryLines(invocations);
     if (invocations.length === 0 && this.#repetition.interventions === 0 && jevLines.length === 0) {
       return;
     }

@@ -1,10 +1,10 @@
+import { AdvisorJevLedgerState, type AdvisorJevUsage } from "./jev/ledger.ts";
 import {
   type AdvisorUsageTotals,
   addAdvisorUsage,
   emptyAdvisorUsageTotals,
   formatAdvisorUsageStatus,
   formatAdvisorUsageTotals,
-  formatTokenCount,
 } from "./usage.ts";
 
 export type GateDecision = "proceed" | "revise" | "blocked";
@@ -120,68 +120,6 @@ interface RepetitionState {
   previousSignature?: string;
 }
 
-export interface AdvisorJevUsageTotals {
-  cost: number;
-  inputTokens: number;
-  outputTokens: number;
-}
-
-export interface AdvisorJevFilterLedger {
-  allowed: number;
-  failures: number;
-  overrides: number;
-  repeatSkipped: number;
-  screened: number;
-  skipped: number;
-}
-
-export interface AdvisorJevGateLedger {
-  checks: number;
-  consultations: number;
-  failures: number;
-  usage: AdvisorJevUsageTotals;
-}
-
-export interface AdvisorJevLedger {
-  filter: AdvisorJevFilterLedger;
-  gate: AdvisorJevGateLedger;
-  usage: AdvisorJevUsageTotals;
-}
-
-export interface AdvisorJevUsage {
-  cost: number;
-  inputTokens: number;
-  outputTokens: number;
-}
-
-const freshJevUsage = (): AdvisorJevUsageTotals => ({
-  cost: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-});
-
-const freshJevLedger = (): AdvisorJevLedger => ({
-  filter: {
-    allowed: 0,
-    failures: 0,
-    overrides: 0,
-    repeatSkipped: 0,
-    screened: 0,
-    skipped: 0,
-  },
-  gate: { checks: 0, consultations: 0, failures: 0, usage: freshJevUsage() },
-  usage: freshJevUsage(),
-});
-
-export const addJevUsage = (
-  totals: AdvisorJevUsageTotals,
-  usage: AdvisorJevUsage
-) => {
-  totals.cost += usage.cost;
-  totals.inputTokens += usage.inputTokens;
-  totals.outputTokens += usage.outputTokens;
-};
-
 interface AdviceLedger {
   draftConsultations: number;
   issued: Map<
@@ -225,10 +163,9 @@ export class AdvisorSessionState {
   #ledger = freshAdviceLedger();
   #usage = freshUsage();
   #consumedCalls = 0;
-  #jev = freshJevLedger();
+  readonly #jev = new AdvisorJevLedgerState();
   #sessionTurnOrdinal = 0;
   #turnsSinceConsultation = 0;
-  #lastSkip: { normalizedQuestion?: string; turn: number } | undefined;
 
   resetTask() {
     this.#repetition = freshRepetition();
@@ -236,10 +173,9 @@ export class AdvisorSessionState {
     this.#ledger = freshAdviceLedger();
     this.#usage = freshUsage();
     this.#consumedCalls = 0;
-    this.#jev = freshJevLedger();
+    this.#jev.reset();
     this.#sessionTurnOrdinal = 0;
     this.#turnsSinceConsultation = 0;
-    this.#lastSkip = undefined;
   }
 
   clearBlocked() {
@@ -453,141 +389,41 @@ export class AdvisorSessionState {
   }
 
   recordJevFilterAllowed() {
-    this.#jev.filter.allowed += 1;
-    this.#jev.filter.screened += 1;
+    this.#jev.recordFilterAllowed();
   }
   recordJevFilterSkipped(repeat: boolean, normalizedQuestion?: string) {
-    this.#jev.filter.skipped += 1;
-    this.#jev.filter.screened += 1;
-    if (repeat) {
-      this.#jev.filter.repeatSkipped += 1;
-    }
-    this.#lastSkip = {
-      ...(normalizedQuestion ? { normalizedQuestion } : {}),
-      turn: this.#sessionTurnOrdinal,
-    };
+    this.#jev.recordFilterSkipped(
+      repeat,
+      normalizedQuestion,
+      this.#sessionTurnOrdinal
+    );
   }
   get lastJevSkip() {
-    return this.#lastSkip;
+    return this.#jev.lastSkip;
   }
   recordJevFilterOverride() {
-    this.#jev.filter.overrides += 1;
+    this.#jev.recordFilterOverride();
   }
   recordJevFilterFailure() {
-    this.#jev.filter.failures += 1;
+    this.#jev.recordFilterFailure();
   }
   recordJevFilterUsage(usage: AdvisorJevUsage) {
-    addJevUsage(this.#jev.usage, usage);
+    this.#jev.recordFilterUsage(usage);
   }
 
   recordJevGateCheck(usage?: AdvisorJevUsage) {
-    this.#jev.gate.checks += 1;
-    if (usage) {
-      addJevUsage(this.#jev.gate.usage, usage);
-    }
+    this.#jev.recordGateCheck(usage);
   }
   recordJevGateConsultation() {
-    this.#jev.gate.consultations += 1;
+    this.#jev.recordGateConsultation();
   }
   recordJevGateFailure() {
-    this.#jev.gate.failures += 1;
-  }
-
-  #jevFilterActive() {
-    const { filter } = this.#jev;
-    return filter.screened > 0 || filter.overrides > 0 || filter.failures > 0;
-  }
-
-  #savingsLine(markdownCosts: number[], skipped: number) {
-    if (markdownCosts.length === 0) {
-      return "Estimated saving from skips: unavailable — no observed consultation cost this session";
-    }
-    const mean =
-      markdownCosts.reduce((sum, cost) => sum + cost, 0) / markdownCosts.length;
-    return `Estimated saving from skips: ≤ $${(mean * skipped).toFixed(4)} — upper bound; assumes each skipped consultation would have cost this session's mean allowed-consultation cost ($${mean.toFixed(4)}), which the skipped calls would likely have undercut`;
-  }
-
-  #gateLine(gate: AdvisorJevGateLedger) {
-    const consultationCosts = this.#usage.invocations
-      .filter(
-        (item): item is AdvisorInvocationRecord & { cost: number } =>
-          item.trigger === "turn-gate" && typeof item.cost === "number"
-      )
-      .map((item) => item.cost);
-    const gateSpend = consultationCosts.reduce((sum, cost) => sum + cost, 0);
-    return `Turn gate: ${gate.checks} check${gate.checks === 1 ? "" : "s"} (Jev ${this.#formatJevTokens(gate.usage)} · $${gate.usage.cost.toFixed(4)}), ${gate.consultations} consultation${gate.consultations === 1 ? "" : "s"} ($${gateSpend.toFixed(4)})`;
-  }
-
-  #formatJevTokens(usage: AdvisorJevUsageTotals) {
-    return `↑${formatTokenCount(usage.inputTokens + usage.outputTokens)}`;
-  }
-
-  #jevSummaryLines() {
-    const lines: string[] = [];
-    const { filter, gate, usage } = this.#jev;
-    const nonRepeatJevActivity =
-      filter.allowed +
-      (filter.skipped - filter.repeatSkipped) +
-      filter.failures;
-    if (nonRepeatJevActivity === 0 && filter.repeatSkipped > 0) {
-      // Only dedup fired — no Jev call ever happened, so the line must not
-      // claim Jev activity.
-      const parts = [
-        `${filter.repeatSkipped} repeat question${filter.repeatSkipped === 1 ? "" : "s"} skipped, earlier advice reattached`,
-      ];
-      if (filter.overrides > 0) {
-        parts.push(
-          `${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`
-        );
-      }
-      lines.push(`Consultation dedup: ${parts.join(", ")}`);
-      lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
-    } else if (this.#jevFilterActive()) {
-      lines.push(this.#filterLine(filter));
-      const jevTokens = usage.inputTokens + usage.outputTokens;
-      if (jevTokens > 0) {
-        lines.push(
-          `Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`
-        );
-      }
-      if (filter.skipped > 0) {
-        lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
-      }
-    }
-    if (gate.checks > 0 || gate.consultations > 0) {
-      lines.push(this.#gateLine(gate));
-    }
-    return lines;
-  }
-
-  #markdownCosts(): number[] {
-    return this.#usage.invocations
-      .filter(
-        (item): item is AdvisorInvocationRecord & { cost: number } =>
-          item.kind === "markdown" && typeof item.cost === "number"
-      )
-      .map((item) => item.cost);
-  }
-
-  #filterLine(filter: AdvisorJevFilterLedger) {
-    const head = `${filter.screened} screened (${filter.allowed} allowed, ${filter.skipped} skipped${filter.repeatSkipped > 0 ? ` [${filter.repeatSkipped} repeat]` : ""})`;
-    const parts = [head];
-    if (filter.overrides > 0) {
-      parts.push(
-        `${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`
-      );
-    }
-    if (filter.failures > 0) {
-      parts.push(
-        `${filter.failures} failure${filter.failures === 1 ? "" : "s"}`
-      );
-    }
-    return `Jev filter: ${parts.join(", ")}`;
+    this.#jev.recordGateFailure();
   }
 
   summary(limit: number | undefined) {
     const { invocations, totals } = this.#usage;
-    const jevLines = this.#jevSummaryLines();
+    const jevLines = this.#jev.summaryLines(invocations);
     if (
       invocations.length === 0 &&
       this.#repetition.interventions === 0 &&
