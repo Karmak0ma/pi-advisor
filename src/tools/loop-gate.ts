@@ -180,6 +180,7 @@ export const handleAutomaticGate = async (
     return failure.block ? { block: true, reason: failure.reason } : undefined;
   }
   session.consumeCall();
+  session.resetTurnsSinceConsultation();
   herdrAdvisorActivity.start();
   let scoutDetails: ScoutToolDetails | undefined;
   const scoutStatusToken = Symbol("automatic-gate-scout");

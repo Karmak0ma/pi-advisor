@@ -137,6 +137,35 @@ const jevItems = (
     ),
   },
   {
+    currentValue:
+      settings.jevTurnGateEveryTurns === 0 ||
+      settings.jevTurnGateEveryTurns === undefined
+        ? "Off"
+        : `every ${settings.jevTurnGateEveryTurns} turns`,
+    description:
+      "Proactively consult the Advisor every N turns without a consultation (0 = off).",
+    id: "jevTurnGateEveryTurns",
+    label: "Jev turn gate",
+    values: [
+      "Off",
+      "every 3 turns",
+      "every 5 turns",
+      "every 10 turns",
+      "every 20 turns",
+    ],
+  },
+  {
+    currentValue: String(settings.jevTurnGateNoulThreshold ?? 0.8),
+    description:
+      "Jev confidence required before the turn gate interrupts with advice.",
+    id: "jevTurnGateNoulThreshold",
+    label: "Jev turn-gate threshold",
+    values: numericValues(
+      settings.jevTurnGateNoulThreshold ?? 0.8,
+      [0.6, 0.7, 0.8, 0.85, 0.9, 0.95]
+    ),
+  },
+  {
     currentValue: settings.jevTransport ?? "auto",
     description:
       "How Jev calls travel: auto reuses an OpenRouter login when no TypeSafe key is set.",

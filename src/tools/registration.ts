@@ -3,6 +3,7 @@ import { appendOutcome } from "../outcomes.ts";
 import type { AdvisorSessionState } from "../session-state.ts";
 import { consultAdvisor, runAdvisorGate } from "./consultation.ts";
 import { screenConsultation } from "./jev-filter.ts";
+import { registerJevTurnGate } from "./jev-turn-gate.ts";
 import { registerAskAdvisorTool } from "./register-ask-advisor.ts";
 import { registerToolLifecycle } from "./register-lifecycle.ts";
 import { registerOutcomeTool } from "./register-outcome.ts";
@@ -34,4 +35,18 @@ export const registerAdvisorTool = (
   registerToolLifecycle(registration);
   registerAskAdvisorTool(registration);
   registerOutcomeTool(registration);
+  registerJevTurnGate(
+    (
+      event: Parameters<ExtensionAPI["on"]>[0],
+      handler: (event: unknown, ctx: never) => unknown
+    ) => pi.on(event, handler as never),
+    {
+      activeTools: () => pi.getActiveTools(),
+      consult: registration.consult,
+      ...(dependencies.turnGateDeps ? { deps: dependencies.turnGateDeps } : {}),
+      send: (message) =>
+        pi.sendMessage(message as never, { deliverAs: "steer" } as never),
+      session,
+    }
+  );
 };

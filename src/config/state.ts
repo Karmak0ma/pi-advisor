@@ -12,6 +12,8 @@ import {
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
+  DEFAULT_JEV_TURN_GATE_EVERY_TURNS,
+  DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD,
   type GateFailureMode,
   type JevTransport,
 } from "./types.ts";
@@ -49,6 +51,9 @@ export let advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 export let advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
 export let advisorJevPricePerMtokRef = DEFAULT_JEV_PRICE_PER_MTOK;
 export let advisorJevTransportRef: JevTransport = "auto";
+export let advisorJevTurnGateEveryTurnsRef = DEFAULT_JEV_TURN_GATE_EVERY_TURNS;
+export let advisorJevTurnGateNoulThresholdRef =
+  DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD;
 export let advisorToolResultMaxLinesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES;
 export let advisorToolResultMaxBytesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES;
 export let advisorRedactSecretsRef = false;
@@ -163,6 +168,12 @@ export const setAdvisorJevPricePerMtokRef = (value: number) => {
 export const setAdvisorJevTransportRef = (value: JevTransport) => {
   advisorJevTransportRef = value;
 };
+export const setAdvisorJevTurnGateEveryTurnsRef = (value: number) => {
+  advisorJevTurnGateEveryTurnsRef = value;
+};
+export const setAdvisorJevTurnGateNoulThresholdRef = (value: number) => {
+  advisorJevTurnGateNoulThresholdRef = value;
+};
 export const setAdvisorToolResultMaxLinesRef = (value: number) => {
   advisorToolResultMaxLinesRef = value;
 };
@@ -227,6 +238,8 @@ export const getAdvisorSettings = () => ({
   jevPricePerMtok: advisorJevPricePerMtokRef,
   jevTimeoutMs: advisorJevTimeoutMsRef,
   jevTransport: advisorJevTransportRef,
+  jevTurnGateEveryTurns: advisorJevTurnGateEveryTurnsRef,
+  jevTurnGateNoulThreshold: advisorJevTurnGateNoulThresholdRef,
   loopThreshold: advisorLoopThresholdRef,
   maxCallsPerSession: advisorMaxCallsPerSessionRef,
   outcomeLogging: advisorOutcomeLoggingRef,

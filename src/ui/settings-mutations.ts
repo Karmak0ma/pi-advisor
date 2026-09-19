@@ -82,6 +82,13 @@ export const mutateAdvisorSettings = (
     case "jevFilterOverrideWindow":
       settings.jevFilterOverrideWindow = Number(value.replace(" turns", ""));
       break;
+    case "jevTurnGateEveryTurns":
+      settings.jevTurnGateEveryTurns =
+        value === "Off" ? 0 : Number(value.replace(/[^0-9]/g, ""));
+      break;
+    case "jevTurnGateNoulThreshold":
+      settings.jevTurnGateNoulThreshold = Number(value);
+      break;
     case "jevModel":
       settings.jevModel = value.trim() || "jev-latest";
       break;

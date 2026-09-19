@@ -21,6 +21,8 @@ import {
   setAdvisorJevPricePerMtokRef,
   setAdvisorJevTimeoutMsRef,
   setAdvisorJevTransportRef,
+  setAdvisorJevTurnGateEveryTurnsRef,
+  setAdvisorJevTurnGateNoulThresholdRef,
   setAdvisorLoopThresholdRef,
   setAdvisorMaxCallsPerSessionRef,
   setAdvisorOutcomeLoggingRef,
@@ -93,6 +95,10 @@ const applyAdvisorSettings = (settings: AdvisorSettings) => {
     settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK
   );
   setAdvisorJevTransportRef(settings.jevTransport ?? "auto");
+  setAdvisorJevTurnGateEveryTurnsRef(settings.jevTurnGateEveryTurns ?? 0);
+  setAdvisorJevTurnGateNoulThresholdRef(
+    settings.jevTurnGateNoulThreshold ?? 0.8
+  );
   setAdvisorToolResultMaxLinesRef(settings.toolResultMaxLines ?? 2000);
   setAdvisorToolResultMaxBytesRef(settings.toolResultMaxBytes ?? 50 * 1024);
   setAdvisorRedactSecretsRef(settings.redactSecrets ?? false);

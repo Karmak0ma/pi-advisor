@@ -68,6 +68,7 @@ export const startManualConsultation = (
         return;
       }
       progress.phase = "complete";
+      runtime.advisorSessionState.resetTurnsSinceConsultation();
       runtime.advisorSessionState.recordInvocation({
         cost: advisorUsageCost(usage),
         executionEffect: "continued",
@@ -104,6 +105,7 @@ export const startManualConsultation = (
       }
       progress.phase = "error";
       const message = error instanceof Error ? error.message : String(error);
+      runtime.advisorSessionState.resetTurnsSinceConsultation();
       runtime.advisorSessionState.recordInvocation({
         executionEffect: "continued",
         failure: "provider-error",

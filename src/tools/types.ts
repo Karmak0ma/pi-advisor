@@ -9,6 +9,7 @@ import type {
 } from "../session-state.ts";
 import type { consultAdvisor, runAdvisorGate } from "./consultation.ts";
 import type { JevSkipKind, screenConsultation } from "./jev-filter.ts";
+import type { JevTurnGateDeps } from "./jev-turn-gate.ts";
 import type { ScoutStatusManager } from "./scout-status.ts";
 
 export type {
@@ -124,4 +125,5 @@ export interface ToolRegistrationDependencies {
   runGate?: typeof runAdvisorGate;
   screen?: typeof screenConsultation;
   statusManager?: ScoutStatusManager;
+  turnGateDeps?: JevTurnGateDeps;
 }

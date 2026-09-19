@@ -78,6 +78,8 @@ export interface AdvisorSettings {
   jevPricePerMtok?: number;
   jevTimeoutMs?: number;
   jevTransport?: "auto" | "typesafe" | "openrouter";
+  jevTurnGateEveryTurns?: number;
+  jevTurnGateNoulThreshold?: number;
   loopThreshold?: number;
   maxCallsPerSession?: number;
   outcomeLogging?: boolean;

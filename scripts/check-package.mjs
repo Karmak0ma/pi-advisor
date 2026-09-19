@@ -70,6 +70,7 @@ const expectedFiles = [
   "src/tools/gate-policy.ts",
   "src/tools/gate-protocol.ts",
   "src/tools/jev-filter.ts",
+  "src/tools/jev-turn-gate.ts",
   "src/tools/loop-gate.ts",
   "src/tools/prompts.ts",
   "src/tools/register-ask-advisor.ts",

@@ -93,22 +93,22 @@ export const screenConsultation = (
   deps: ScreeningDeps = {}
 ): Promise<ScreeningOutcome> => {
   if (!advisorJevFilterEnabledRef || isSimpleMode()) {
-    return allow();
+    return Promise.resolve(allow());
   }
   const normalizedQuestion = normalizeScreeningQuestion(options.question);
   const bypass = bypassOutcome(session, options, normalizedQuestion);
   if (bypass) {
-    return bypass;
+    return Promise.resolve(bypass);
   }
   const reattached = session.reattachedAdviceFor(normalizedQuestion);
   if (reattached) {
     session.recordJevFilterSkipped(true, normalizedQuestion);
-    return {
+    return Promise.resolve({
       decision: "skip",
       kind: "repeat",
       reason: "already answered earlier in this session",
       reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES),
-    };
+    });
   }
   return screenWithJev(ctx, session, options, deps, normalizedQuestion);
 };

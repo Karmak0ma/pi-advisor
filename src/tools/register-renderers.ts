@@ -21,6 +21,64 @@ export const registerToolRenderers = (pi: ExtensionAPI): void => {
   );
 
   pi.registerMessageRenderer?.(
+    "advisor-turn-gate-call",
+    (message, _options, theme) => {
+      const details = message.details as { question?: string } | undefined;
+      return renderAdvisorCallBox(details?.question, theme);
+    }
+  );
+
+  pi.registerMessageRenderer?.(
+    "advisor-turn-gate-result",
+    (message, { expanded }, theme) => {
+      const details = message.details as
+        | { advisor?: string; text?: string; usage?: unknown }
+        | undefined;
+      const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
+      box.addChild(
+        new Text(
+          theme.fg("warning", theme.bold("◆ ADVISOR · TURN REVIEW")),
+          0,
+          0
+        )
+      );
+      if (details?.advisor) {
+        box.addChild(new Text(theme.fg("dim", `  ${details.advisor}`), 0, 0));
+      }
+      if (getAdvisorSettings().showUsageDetails) {
+        const usage = formatAdvisorUsage(details?.usage);
+        if (usage) {
+          box.addChild(new Text(theme.fg("dim", `  Usage: ${usage}`), 0, 0));
+        }
+      }
+      if (details?.text) {
+        box.addChild(
+          new Markdown(
+            adviceForDisplay(details.text, Boolean(expanded)),
+            0,
+            0,
+            getMarkdownTheme()
+          )
+        );
+      } else {
+        box.addChild(
+          new Text(
+            theme.fg(
+              "error",
+              typeof message.content === "string"
+                ? message.content
+                : "Advisor turn review failed."
+            ),
+            0,
+            0
+          )
+        );
+      }
+      return box;
+    }
+  );
+
+  pi.registerMessageRenderer?.(
     "advisor-loop-call",
     (message, _options, theme) => {
       const details = message.details as { question?: string } | undefined;

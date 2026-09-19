@@ -15,6 +15,8 @@ var DEFAULT_JEV_PRICE_PER_MTOK = 0.042;
 var DEFAULT_JEV_FILTER_SKIP_CONFIDENCE = 0.85;
 var DEFAULT_JEV_FILTER_NOUL_MARGIN = 0.35;
 var DEFAULT_JEV_FILTER_OVERRIDE_WINDOW = 10;
+var DEFAULT_JEV_TURN_GATE_EVERY_TURNS = 0;
+var DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD = 0.8;
 var JEV_TRANSPORTS = [
   "auto",
   "typesafe",
@@ -62,6 +64,8 @@ var advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 var advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
 var advisorJevPricePerMtokRef = DEFAULT_JEV_PRICE_PER_MTOK;
 var advisorJevTransportRef = "auto";
+var advisorJevTurnGateEveryTurnsRef = DEFAULT_JEV_TURN_GATE_EVERY_TURNS;
+var advisorJevTurnGateNoulThresholdRef = DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD;
 var advisorToolResultMaxLinesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES;
 var advisorToolResultMaxBytesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES;
 var advisorRedactSecretsRef = false;
@@ -167,6 +171,12 @@ var setAdvisorJevPricePerMtokRef = (value) => {
 var setAdvisorJevTransportRef = (value) => {
   advisorJevTransportRef = value;
 };
+var setAdvisorJevTurnGateEveryTurnsRef = (value) => {
+  advisorJevTurnGateEveryTurnsRef = value;
+};
+var setAdvisorJevTurnGateNoulThresholdRef = (value) => {
+  advisorJevTurnGateNoulThresholdRef = value;
+};
 var setAdvisorToolResultMaxLinesRef = (value) => {
   advisorToolResultMaxLinesRef = value;
 };
@@ -226,6 +236,8 @@ var getAdvisorSettings = () => ({
   jevPricePerMtok: advisorJevPricePerMtokRef,
   jevTimeoutMs: advisorJevTimeoutMsRef,
   jevTransport: advisorJevTransportRef,
+  jevTurnGateEveryTurns: advisorJevTurnGateEveryTurnsRef,
+  jevTurnGateNoulThreshold: advisorJevTurnGateNoulThresholdRef,
   loopThreshold: advisorLoopThresholdRef,
   maxCallsPerSession: advisorMaxCallsPerSessionRef,
   outcomeLogging: advisorOutcomeLoggingRef,
@@ -505,6 +517,20 @@ var CONFIG_SCHEMA = {
     type: "enum",
     validate: isValidJevTransport
   },
+  advisorJevTurnGateEveryTurns: {
+    accepted: "a non-negative safe integer (0 disables the turn gate)",
+    current: () => advisorJevTurnGateEveryTurnsRef,
+    persisted: true,
+    type: "number",
+    validate: nonNegativeSafeInteger
+  },
+  advisorJevTurnGateNoulThreshold: {
+    accepted: "a number between 0.5 and 1 inclusive",
+    current: () => advisorJevTurnGateNoulThresholdRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevSkipConfidence
+  },
   advisorLoopThreshold: {
     accepted: "a safe integer of at least 2",
     current: () => advisorLoopThresholdRef,
@@ -762,6 +788,8 @@ var resetDefaults = () => {
   setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
   setAdvisorJevTransportRef("auto");
+  setAdvisorJevTurnGateEveryTurnsRef(DEFAULT_JEV_TURN_GATE_EVERY_TURNS);
+  setAdvisorJevTurnGateNoulThresholdRef(DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD);
   setAdvisorToolResultMaxLinesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES);
   setAdvisorToolResultMaxBytesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES);
   setAdvisorRedactSecretsRef(false);
@@ -818,6 +846,8 @@ var applyConfig = (config) => {
   applyOptionalConfig(config, "advisorJevDigestMaxChars", setAdvisorJevDigestMaxCharsRef);
   applyOptionalConfig(config, "advisorJevPricePerMtok", setAdvisorJevPricePerMtokRef);
   applyOptionalConfig(config, "advisorJevTransport", setAdvisorJevTransportRef);
+  applyOptionalConfig(config, "advisorJevTurnGateEveryTurns", setAdvisorJevTurnGateEveryTurnsRef);
+  applyOptionalConfig(config, "advisorJevTurnGateNoulThreshold", setAdvisorJevTurnGateNoulThresholdRef);
   applyOptionalConfig(config, "advisorToolResultMaxLines", setAdvisorToolResultMaxLinesRef);
   applyOptionalConfig(config, "advisorToolResultMaxBytes", setAdvisorToolResultMaxBytesRef);
   applyOptionalConfig(config, "advisorRedactSecrets", setAdvisorRedactSecretsRef);
@@ -4369,6 +4399,7 @@ var startManualConsultation = (runtime, ctx, question, controller, scoutStatusTo
       return;
     }
     progress.phase = "complete";
+    runtime.advisorSessionState.resetTurnsSinceConsultation();
     runtime.advisorSessionState.recordInvocation({
       cost: advisorUsageCost(usage),
       executionEffect: "continued",
@@ -4401,6 +4432,7 @@ ${markdown}`,
     }
     progress.phase = "error";
     const message = error instanceof Error ? error.message : String(error);
+    runtime.advisorSessionState.resetTurnsSinceConsultation();
     runtime.advisorSessionState.recordInvocation({
       executionEffect: "continued",
       failure: "provider-error",
@@ -5574,6 +5606,26 @@ var jevItems = (settings, theme, tui) => [
     values: numericValues(settings.jevPricePerMtok ?? 0.042, [0.01, 0.02, 0.042, 0.05, 0.1])
   },
   {
+    currentValue: settings.jevTurnGateEveryTurns === 0 || settings.jevTurnGateEveryTurns === undefined ? "Off" : `every ${settings.jevTurnGateEveryTurns} turns`,
+    description: "Proactively consult the Advisor every N turns without a consultation (0 = off).",
+    id: "jevTurnGateEveryTurns",
+    label: "Jev turn gate",
+    values: [
+      "Off",
+      "every 3 turns",
+      "every 5 turns",
+      "every 10 turns",
+      "every 20 turns"
+    ]
+  },
+  {
+    currentValue: String(settings.jevTurnGateNoulThreshold ?? 0.8),
+    description: "Jev confidence required before the turn gate interrupts with advice.",
+    id: "jevTurnGateNoulThreshold",
+    label: "Jev turn-gate threshold",
+    values: numericValues(settings.jevTurnGateNoulThreshold ?? 0.8, [0.6, 0.7, 0.8, 0.85, 0.9, 0.95])
+  },
+  {
     currentValue: settings.jevTransport ?? "auto",
     description: "How Jev calls travel: auto reuses an OpenRouter login when no TypeSafe key is set.",
     id: "jevTransport",
@@ -5870,6 +5922,12 @@ var mutateAdvisorSettings = (settings, id, value, presets) => {
     case "jevFilterOverrideWindow":
       settings.jevFilterOverrideWindow = Number(value.replace(" turns", ""));
       break;
+    case "jevTurnGateEveryTurns":
+      settings.jevTurnGateEveryTurns = value === "Off" ? 0 : Number(value.replace(/[^0-9]/g, ""));
+      break;
+    case "jevTurnGateNoulThreshold":
+      settings.jevTurnGateNoulThreshold = Number(value);
+      break;
     case "jevModel":
       settings.jevModel = value.trim() || "jev-latest";
       break;
@@ -6030,6 +6088,8 @@ var applyAdvisorSettings = (settings) => {
   setAdvisorJevDigestMaxCharsRef(settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK);
   setAdvisorJevTransportRef(settings.jevTransport ?? "auto");
+  setAdvisorJevTurnGateEveryTurnsRef(settings.jevTurnGateEveryTurns ?? 0);
+  setAdvisorJevTurnGateNoulThresholdRef(settings.jevTurnGateNoulThreshold ?? 0.8);
   setAdvisorToolResultMaxLinesRef(settings.toolResultMaxLines ?? 2000);
   setAdvisorToolResultMaxBytesRef(settings.toolResultMaxBytes ?? 50 * 1024);
   setAdvisorRedactSecretsRef(settings.redactSecrets ?? false);
@@ -6303,6 +6363,14 @@ var composeScreeningVerdict = (answers, { noulMargin, skipConfidence }) => {
     skip: negligibleMass >= skipConfidence && confidentlySelfAnswerable
   };
 };
+var composeTurnGateVerdict = (answers, threshold) => {
+  if (!isRecord2(answers)) {
+    return false;
+  }
+  const answer = answers.should_consult;
+  const noul = isRecord2(answer) ? finiteNumber(answer.noul) : undefined;
+  return noul !== undefined && noul >= threshold;
+};
 
 // src/jev/state.ts
 var JEV_TEXT_CAP_BYTES = 8 * 1024;
@@ -6342,22 +6410,22 @@ var notifyOutageOnce = (ctx, category, message) => {
 var allow = () => ({ decision: "allow" });
 var screenConsultation = (ctx, session, options, deps = {}) => {
   if (!advisorJevFilterEnabledRef || isSimpleMode()) {
-    return allow();
+    return Promise.resolve(allow());
   }
   const normalizedQuestion = normalizeScreeningQuestion(options.question);
   const bypass = bypassOutcome(session, options, normalizedQuestion);
   if (bypass) {
-    return bypass;
+    return Promise.resolve(bypass);
   }
   const reattached = session.reattachedAdviceFor(normalizedQuestion);
   if (reattached) {
     session.recordJevFilterSkipped(true, normalizedQuestion);
-    return {
+    return Promise.resolve({
       decision: "skip",
       kind: "repeat",
       reason: "already answered earlier in this session",
       reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES)
-    };
+    });
   }
   return screenWithJev(ctx, session, options, deps, normalizedQuestion);
 };
@@ -6425,9 +6493,6 @@ var screenWithJev = async (ctx, session, options, deps, normalizedQuestion) => {
   }
 };
 var screeningSkipText = (outcome) => outcome.kind === "repeat" && outcome.reattachedAdvice ? repeatSkipText(outcome.reattachedAdvice) : SCREENED_SKIP_TEXT;
-
-// src/tools/register-ask-advisor.ts
-import { Type } from "typebox";
 
 // src/tools/gate-policy.ts
 var updateAdvisorUsageStatus = (ctx, session) => {
@@ -6501,6 +6566,113 @@ var reserveAdvisorCall = (event, ctx, session, reservedCalls) => {
   reservedCalls.add(event.toolCallId);
   return {};
 };
+
+// src/tools/jev-turn-gate.ts
+var turnGateQuestion = {
+  criteria: {
+    false: "The executor is progressing soundly on work that matches the user's intent; interrupting would add nothing material.",
+    true: "The executor is approaching a material decision, repeating a failure, about to claim success without validation, or drifting from the user's intent; a second opinion now would change what happens next."
+  },
+  instructions: "Should a senior engineering advisor be consulted right now, before the executor continues? Judge from `recent_conversation`.",
+  type: "noul"
+};
+var lastNotifiedOutage2;
+var notifyFailureOnce = (ctx, category, message) => {
+  const key = `${category}:${message}`;
+  if (key === lastNotifiedOutage2) {
+    return;
+  }
+  lastNotifiedOutage2 = key;
+  if (ctx.hasUI) {
+    ctx.ui.notify(`Advisor Jev turn gate failed (${category}); continuing without a proactive consultation. ${message}`, "warning");
+  }
+};
+var handleJevTurnEnd = async (registration, ctx) => {
+  const { session } = registration;
+  session.recordCompletedTurn();
+  const interval = advisorJevTurnGateEveryTurnsRef;
+  if (interval <= 0 || session.turnsSinceConsultation <= 0 || session.turnsSinceConsultation % interval !== 0) {
+    return;
+  }
+  if (isSimpleMode() || session.blocked || !registration.activeTools().includes("ask_advisor") || !session.canConsult(getAdvisorMaxCallsPerSession())) {
+    return;
+  }
+  const consult = registration.deps?.consult ?? registration.consult;
+  const deps = registration.deps ?? {};
+  try {
+    const credentials = await (deps.resolveTransport ?? resolveJevTransport)(ctx);
+    if (!credentials) {
+      session.recordJevGateFailure();
+      notifyFailureOnce(ctx, "missing-key", "No Jev credentials resolved (no TypeSafe key and no OpenRouter login).");
+      return;
+    }
+    const client = new JevClient({
+      apiKey: credentials.apiKey,
+      ...deps.fetch ? { fetch: deps.fetch } : {},
+      model: advisorJevModelRef,
+      timeoutMs: advisorJevTimeoutMsRef,
+      transport: credentials.transport
+    });
+    const result = await client.ask(buildJevState(ctx, {}), {
+      should_consult: turnGateQuestion
+    });
+    session.recordJevGateCheck(result.usage);
+    const shouldConsult = composeTurnGateVerdict(result.answers, advisorJevTurnGateNoulThresholdRef);
+    if (!shouldConsult) {
+      return;
+    }
+    session.consumeCall();
+    herdrAdvisorActivity.start();
+    registration.send({
+      content: "Proactive Advisor turn review",
+      customType: "advisor-turn-gate-call",
+      details: {
+        question: `Turn gate: ${session.turnsSinceConsultation} turns without a consultation`,
+        turn: session.sessionTurnOrdinal
+      },
+      display: true
+    });
+    try {
+      const consulted = await consult(ctx, undefined, ctx.signal, undefined, "turn-gate");
+      session.recordJevGateConsultation();
+      session.resetTurnsSinceConsultation();
+      session.recordInvocation({
+        cost: advisorUsageCost(consulted.usage),
+        executionEffect: "continued",
+        kind: "markdown",
+        model: consulted.model,
+        trigger: "turn-gate",
+        usage: consulted.usage
+      });
+      updateAdvisorUsageStatus(ctx, session);
+      registration.send({
+        content: consulted.markdown,
+        customType: "advisor-turn-gate-result",
+        details: {
+          advisor: consulted.model,
+          text: consulted.markdown,
+          usage: consulted.usage
+        },
+        display: true
+      });
+    } finally {
+      herdrAdvisorActivity.finish();
+    }
+  } catch (error) {
+    session.recordJevGateFailure();
+    if (error instanceof JevFailure) {
+      notifyFailureOnce(ctx, error.category, error.message);
+    } else if (!ctx.signal?.aborted) {
+      notifyFailureOnce(ctx, "error", error instanceof Error ? error.message : String(error));
+    }
+  }
+};
+var registerJevTurnGate = (on, registration) => {
+  on("turn_end", (_event, ctx) => handleJevTurnEnd(registration, ctx));
+};
+
+// src/tools/register-ask-advisor.ts
+import { Type } from "typebox";
 
 // src/tools/render-advisor-result.ts
 import {
@@ -6670,6 +6842,7 @@ var registerAskAdvisorTool = ({
       claimTrackedHandoff(session, params.includeTrackedFiles);
       if (!isSimpleMode()) {
         session.consumeCall();
+        session.resetTurnsSinceConsultation();
       }
       herdrAdvisorActivity.start();
       let scoutDetails;
@@ -6878,6 +7051,7 @@ var handleAutomaticGate = async (pi, event, ctx, session, runGate, scoutStatus) 
     return failure.block ? { block: true, reason: failure.reason } : undefined;
   }
   session.consumeCall();
+  session.resetTurnsSinceConsultation();
   herdrAdvisorActivity.start();
   let scoutDetails;
   const scoutStatusToken = Symbol("automatic-gate-scout");
@@ -7077,6 +7251,30 @@ var registerToolRenderers = (pi) => {
     renderScoutDetails(box, scout, Boolean(expanded), theme);
     return box;
   });
+  pi.registerMessageRenderer?.("advisor-turn-gate-call", (message, _options, theme) => {
+    const details = message.details;
+    return renderAdvisorCallBox(details?.question, theme);
+  });
+  pi.registerMessageRenderer?.("advisor-turn-gate-result", (message, { expanded }, theme) => {
+    const details = message.details;
+    const box = new Box4(1, 1, (text) => theme.bg("customMessageBg", text));
+    box.addChild(new Text7(theme.fg("warning", theme.bold("◆ ADVISOR · TURN REVIEW")), 0, 0));
+    if (details?.advisor) {
+      box.addChild(new Text7(theme.fg("dim", `  ${details.advisor}`), 0, 0));
+    }
+    if (getAdvisorSettings().showUsageDetails) {
+      const usage = formatAdvisorUsage(details?.usage);
+      if (usage) {
+        box.addChild(new Text7(theme.fg("dim", `  Usage: ${usage}`), 0, 0));
+      }
+    }
+    if (details?.text) {
+      box.addChild(new Markdown5(adviceForDisplay(details.text, Boolean(expanded)), 0, 0, getMarkdownTheme5()));
+    } else {
+      box.addChild(new Text7(theme.fg("error", typeof message.content === "string" ? message.content : "Advisor turn review failed."), 0, 0));
+    }
+    return box;
+  });
   pi.registerMessageRenderer?.("advisor-loop-call", (message, _options, theme) => {
     const details = message.details;
     return renderAdvisorCallBox(details?.question, theme);
@@ -7119,6 +7317,13 @@ var registerAdvisorTool = (pi, session = advisorSessionState, dependencies = {})
   registerToolLifecycle(registration);
   registerAskAdvisorTool(registration);
   registerOutcomeTool(registration);
+  registerJevTurnGate((event, handler) => pi.on(event, handler), {
+    activeTools: () => pi.getActiveTools(),
+    consult: registration.consult,
+    ...dependencies.turnGateDeps ? { deps: dependencies.turnGateDeps } : {},
+    send: (message) => pi.sendMessage(message, { deliverAs: "steer" }),
+    session
+  });
 };
 
 // extensions/index.ts

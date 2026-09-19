@@ -9,6 +9,8 @@ import {
   advisorJevPricePerMtokRef,
   advisorJevTimeoutMsRef,
   advisorJevTransportRef,
+  advisorJevTurnGateEveryTurnsRef,
+  advisorJevTurnGateNoulThresholdRef,
   setAdvisorJevModelRef,
   setAdvisorJevTimeoutMsRef,
   setAdvisorJevTransportRef,
@@ -63,6 +65,8 @@ const INVALID_SETTINGS: [Record<string, unknown>, RegExp][] = [
   [{ advisorJevFilterNoulMargin: -0.1 }, /advisorJevFilterNoulMargin/],
   [{ advisorJevFilterNoulMargin: 0.6 }, /advisorJevFilterNoulMargin/],
   [{ advisorJevFilterOverrideWindow: -1 }, /advisorJevFilterOverrideWindow/],
+  [{ advisorJevTurnGateEveryTurns: -1 }, /advisorJevTurnGateEveryTurns/],
+  [{ advisorJevTurnGateNoulThreshold: 1.1 }, /advisorJevTurnGateNoulThreshold/],
 ];
 
 const focusJevFilterRow = (selector: any) => {
@@ -88,6 +92,8 @@ describe("Jev shared settings", () => {
       expect(advisorJevFilterSkipConfidenceRef).toBe(0.85);
       expect(advisorJevFilterNoulMarginRef).toBe(0.35);
       expect(advisorJevFilterOverrideWindowRef).toBe(10);
+      expect(advisorJevTurnGateEveryTurnsRef).toBe(0);
+      expect(advisorJevTurnGateNoulThresholdRef).toBe(0.8);
       expect(validateConfig({ advisorJevModel: "jev-1.13.0" })).toBe(true);
       expect(validateConfig({ advisorJevTimeoutMs: 5000 })).toBe(true);
       expect(validateConfig({ advisorJevDigestMaxChars: 0 })).toBe(true);
@@ -98,6 +104,10 @@ describe("Jev shared settings", () => {
       );
       expect(validateConfig({ advisorJevFilterNoulMargin: 0.4 })).toBe(true);
       expect(validateConfig({ advisorJevFilterOverrideWindow: 5 })).toBe(true);
+      expect(validateConfig({ advisorJevTurnGateEveryTurns: 5 })).toBe(true);
+      expect(validateConfig({ advisorJevTurnGateNoulThreshold: 0.9 })).toBe(
+        true
+      );
       for (const [invalid, pattern] of INVALID_SETTINGS) {
         expect(() => validateConfig(invalid)).toThrow(pattern);
       }
@@ -116,6 +126,8 @@ describe("Jev shared settings", () => {
         advisorJevPricePerMtok: 0.05,
         advisorJevTimeoutMs: 15_000,
         advisorJevTransport: "openrouter",
+        advisorJevTurnGateEveryTurns: 5,
+        advisorJevTurnGateNoulThreshold: 0.85,
       },
       () => {
         loadConfig({ cwd: "/", isProjectTrusted: () => false } as any);
@@ -127,6 +139,8 @@ describe("Jev shared settings", () => {
         expect(advisorJevFilterSkipConfidenceRef).toBe(0.9);
         expect(advisorJevFilterNoulMarginRef).toBe(0.4);
         expect(advisorJevFilterOverrideWindowRef).toBe(20);
+        expect(advisorJevTurnGateEveryTurnsRef).toBe(5);
+        expect(advisorJevTurnGateNoulThresholdRef).toBe(0.85);
 
         setAdvisorJevModelRef(undefined);
         setAdvisorJevTimeoutMsRef(30_000);
@@ -142,6 +156,8 @@ describe("Jev shared settings", () => {
           advisorJevPricePerMtok: 0.05,
           advisorJevTimeoutMs: 30_000,
           advisorJevTransport: "typesafe",
+          advisorJevTurnGateEveryTurns: 5,
+          advisorJevTurnGateNoulThreshold: 0.85,
         });
       }
     );
@@ -180,6 +196,10 @@ describe("Jev shared settings", () => {
     expect(saved.at(-1)).toMatchObject({ jevFilterNoulMargin: 0.4 });
     changeSetting(selector, "Jev override window");
     expect(saved.at(-1)).toMatchObject({ jevFilterOverrideWindow: 20 });
+    changeSetting(selector, "Jev turn gate");
+    expect(saved.at(-1)).toMatchObject({ jevTurnGateEveryTurns: 3 });
+    changeSetting(selector, "Jev turn-gate threshold");
+    expect(saved.at(-1)).toMatchObject({ jevTurnGateNoulThreshold: 0.85 });
     changeSetting(selector, "Jev transport");
     expect(saved.at(-1)).toMatchObject({ jevTransport: "typesafe" });
     expect(plainScreen(selector)).toContain("typesafe");

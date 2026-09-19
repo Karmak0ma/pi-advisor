@@ -19,6 +19,8 @@ import {
   setAdvisorJevPricePerMtokRef,
   setAdvisorJevTimeoutMsRef,
   setAdvisorJevTransportRef,
+  setAdvisorJevTurnGateEveryTurnsRef,
+  setAdvisorJevTurnGateNoulThresholdRef,
   setAdvisorLoopThresholdRef,
   setAdvisorMaxCallsPerSessionRef,
   setAdvisorOutcomeLoggingRef,
@@ -54,6 +56,8 @@ import {
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
+  DEFAULT_JEV_TURN_GATE_EVERY_TURNS,
+  DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD,
 } from "./types.ts";
 
 export const resetDefaults = () => {
@@ -86,6 +90,8 @@ export const resetDefaults = () => {
   setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
   setAdvisorJevTransportRef("auto");
+  setAdvisorJevTurnGateEveryTurnsRef(DEFAULT_JEV_TURN_GATE_EVERY_TURNS);
+  setAdvisorJevTurnGateNoulThresholdRef(DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD);
   setAdvisorToolResultMaxLinesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES);
   setAdvisorToolResultMaxBytesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES);
   setAdvisorRedactSecretsRef(false);
@@ -208,6 +214,16 @@ export const applyConfig = (config: AdvisorConfig) => {
     setAdvisorJevPricePerMtokRef
   );
   applyOptionalConfig(config, "advisorJevTransport", setAdvisorJevTransportRef);
+  applyOptionalConfig(
+    config,
+    "advisorJevTurnGateEveryTurns",
+    setAdvisorJevTurnGateEveryTurnsRef
+  );
+  applyOptionalConfig(
+    config,
+    "advisorJevTurnGateNoulThreshold",
+    setAdvisorJevTurnGateNoulThresholdRef
+  );
   applyOptionalConfig(
     config,
     "advisorToolResultMaxLines",

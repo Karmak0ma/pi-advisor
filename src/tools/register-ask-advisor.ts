@@ -97,6 +97,7 @@ export const registerAskAdvisorTool = ({
       claimTrackedHandoff(session, params.includeTrackedFiles);
       if (!isSimpleMode()) {
         session.consumeCall();
+        session.resetTurnsSinceConsultation();
       }
       herdrAdvisorActivity.start();
       let scoutDetails: AdvisorToolDetails["scout"];
