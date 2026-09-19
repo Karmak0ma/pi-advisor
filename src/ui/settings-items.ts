@@ -40,6 +40,73 @@ const toggle = (
   values: TOGGLE_VALUES,
 });
 
+const jevItems = (
+  settings: AdvisorSettings,
+  theme: Theme,
+  tui: RenderRequester
+): SettingItem[] => [
+  {
+    currentValue: settings.jevModel ?? "jev-latest",
+    description: "TypeSafe Jev model used for screening and turn-gate checks.",
+    id: "jevModel",
+    label: "Jev model",
+    submenu: (_currentValue, done) =>
+      new TextSettingSubmenu({
+        description:
+          "Enter a TypeSafe model name (for example jev-latest or jev-1.13.0).",
+        initial: settings.jevModel ?? "jev-latest",
+        onCancel: done,
+        onSubmit: (value) => ({ value: value.trim() || "jev-latest" }),
+        theme,
+        title: "Jev model",
+        tui,
+      }),
+  },
+  {
+    currentValue: String(settings.jevTimeoutMs ?? 8000),
+    description: "Total wall-time budget for one Jev call, including retries.",
+    id: "jevTimeoutMs",
+    label: "Jev timeout ms",
+    values: numericValues(
+      settings.jevTimeoutMs ?? 8000,
+      [1000, 2000, 5000, 8000, 15_000, 30_000]
+    ),
+  },
+  {
+    currentValue: String(settings.jevDigestMaxChars ?? 4000),
+    description: "Conversation characters sent to Jev as screening evidence.",
+    id: "jevDigestMaxChars",
+    label: "Jev digest chars",
+    values: numericValues(
+      settings.jevDigestMaxChars ?? 4000,
+      [0, 1000, 2000, 4000, 8000, 15_000]
+    ),
+  },
+  {
+    currentValue: String(settings.jevPricePerMtok ?? 0.042),
+    description:
+      "Assumed TypeSafe price per million input tokens for cost lines.",
+    id: "jevPricePerMtok",
+    label: "Jev price/Mtok",
+    values: numericValues(
+      settings.jevPricePerMtok ?? 0.042,
+      [0.01, 0.02, 0.042, 0.05, 0.1]
+    ),
+  },
+  {
+    currentValue: settings.jevTransport ?? "auto",
+    description:
+      "How Jev calls travel: auto reuses an OpenRouter login when no TypeSafe key is set.",
+    id: "jevTransport",
+    label: "Jev transport",
+    values: withCurrentValue(settings.jevTransport ?? "auto", [
+      "auto",
+      "typesafe",
+      "openrouter",
+    ]),
+  },
+];
+
 export const createSettingsItems = ({
   effortLevels,
   presets,
@@ -317,7 +384,8 @@ export const createSettingsItems = ({
       "Allow anonymized Advisor outcomes to be logged globally.",
       settings.outcomeLogging,
       false
-    )
+    ),
+    ...jevItems(settings, theme, tui)
   );
   return items;
 };

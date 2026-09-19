@@ -10,6 +10,11 @@ import {
   setAdvisorGitContextMaxCharsRef,
   setAdvisorGitContextRef,
   setAdvisorHerdrIntegrationRef,
+  setAdvisorJevDigestMaxCharsRef,
+  setAdvisorJevModelRef,
+  setAdvisorJevPricePerMtokRef,
+  setAdvisorJevTimeoutMsRef,
+  setAdvisorJevTransportRef,
   setAdvisorLoopThresholdRef,
   setAdvisorMaxCallsPerSessionRef,
   setAdvisorOutcomeLoggingRef,
@@ -38,6 +43,10 @@ import {
   DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES,
   DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES,
   DEFAULT_CONTEXT_MAX_CHARS,
+  DEFAULT_JEV_DIGEST_MAX_CHARS,
+  DEFAULT_JEV_MODEL,
+  DEFAULT_JEV_PRICE_PER_MTOK,
+  DEFAULT_JEV_TIMEOUT_MS,
 } from "./types.ts";
 
 export const resetDefaults = () => {
@@ -61,6 +70,11 @@ export const resetDefaults = () => {
   setAlwaysOnRef(false);
   setAdvisorFailureModeRef("block-session");
   setAdvisorHerdrIntegrationRef(true);
+  setAdvisorJevModelRef(DEFAULT_JEV_MODEL);
+  setAdvisorJevTimeoutMsRef(DEFAULT_JEV_TIMEOUT_MS);
+  setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
+  setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
+  setAdvisorJevTransportRef("auto");
   setAdvisorToolResultMaxLinesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES);
   setAdvisorToolResultMaxBytesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES);
   setAdvisorRedactSecretsRef(false);
@@ -150,6 +164,19 @@ export const applyConfig = (config: AdvisorConfig) => {
     "advisorHerdrIntegration",
     setAdvisorHerdrIntegrationRef
   );
+  applyNonEmptyStringConfig(config.advisorJevModel, setAdvisorJevModelRef);
+  applyOptionalConfig(config, "advisorJevTimeoutMs", setAdvisorJevTimeoutMsRef);
+  applyOptionalConfig(
+    config,
+    "advisorJevDigestMaxChars",
+    setAdvisorJevDigestMaxCharsRef
+  );
+  applyOptionalConfig(
+    config,
+    "advisorJevPricePerMtok",
+    setAdvisorJevPricePerMtokRef
+  );
+  applyOptionalConfig(config, "advisorJevTransport", setAdvisorJevTransportRef);
   applyOptionalConfig(
     config,
     "advisorToolResultMaxLines",

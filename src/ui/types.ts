@@ -69,6 +69,11 @@ export interface AdvisorSettings {
   gitContext?: GitContextLevel;
   gitContextMaxChars?: number;
   herdrIntegration?: boolean;
+  jevDigestMaxChars?: number;
+  jevModel?: string;
+  jevPricePerMtok?: number;
+  jevTimeoutMs?: number;
+  jevTransport?: "auto" | "typesafe" | "openrouter";
   loopThreshold?: number;
   maxCallsPerSession?: number;
   outcomeLogging?: boolean;

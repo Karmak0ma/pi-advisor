@@ -11,6 +11,11 @@ import {
   advisorGitContextMaxCharsRef,
   advisorGitContextRef,
   advisorHerdrIntegrationRef,
+  advisorJevDigestMaxCharsRef,
+  advisorJevModelRef,
+  advisorJevPricePerMtokRef,
+  advisorJevTimeoutMsRef,
+  advisorJevTransportRef,
   advisorLoopThresholdRef,
   advisorMaxCallsPerSessionRef,
   advisorOutcomeLoggingRef,
@@ -36,6 +41,8 @@ import {
   ADVISOR_TOOL_POLICIES,
   type AdvisorConfig,
   GATE_FAILURE_MODES,
+  JEV_TRANSPORTS,
+  type JevTransport,
   MAX_CONTEXT_MAX_CHARS,
 } from "./types.ts";
 
@@ -85,6 +92,18 @@ export const isValidToolResultMaxLines = (value: unknown): value is number =>
 
 export const isValidToolResultMaxBytes = (value: unknown): value is number =>
   nonNegativeSafeInteger(value);
+
+export const isValidJevTimeoutMs = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+
+export const isValidJevDigestMaxChars = (value: unknown): value is number =>
+  nonNegativeSafeInteger(value);
+
+export const isValidJevPricePerMtok = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0;
+
+export const isValidJevTransport = (value: unknown): value is JevTransport =>
+  typeof value === "string" && JEV_TRANSPORTS.includes(value as JevTransport);
 
 /** One declarative entry per AdvisorConfig key: JSON type, persistence, and
  * the live runtime value behind it. Validation and storage derive from this
@@ -170,6 +189,40 @@ export const CONFIG_SCHEMA = {
     current: () => advisorHerdrIntegrationRef,
     persisted: true,
     type: "boolean",
+  },
+  advisorJevDigestMaxChars: {
+    accepted: "a non-negative safe integer",
+    current: () => advisorJevDigestMaxCharsRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevDigestMaxChars,
+  },
+  advisorJevModel: {
+    accepted: "a non-empty string",
+    current: () => advisorJevModelRef,
+    persisted: true,
+    type: "string",
+  },
+  advisorJevPricePerMtok: {
+    accepted: "a positive number",
+    current: () => advisorJevPricePerMtokRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevPricePerMtok,
+  },
+  advisorJevTimeoutMs: {
+    accepted: "a positive safe integer",
+    current: () => advisorJevTimeoutMsRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevTimeoutMs,
+  },
+  advisorJevTransport: {
+    accepted: JEV_TRANSPORTS.join(", "),
+    current: () => advisorJevTransportRef,
+    persisted: true,
+    type: "enum",
+    validate: isValidJevTransport,
   },
   advisorLoopThreshold: {
     accepted: "a safe integer of at least 2",

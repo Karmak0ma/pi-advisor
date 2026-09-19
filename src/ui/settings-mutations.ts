@@ -70,6 +70,21 @@ export const mutateAdvisorSettings = (
     case "gitContextMaxChars":
       settings.gitContextMaxChars = Number(value);
       break;
+    case "jevModel":
+      settings.jevModel = value.trim() || "jev-latest";
+      break;
+    case "jevTimeoutMs":
+      settings.jevTimeoutMs = Number(value);
+      break;
+    case "jevDigestMaxChars":
+      settings.jevDigestMaxChars = Number(value);
+      break;
+    case "jevPricePerMtok":
+      settings.jevPricePerMtok = Number(value);
+      break;
+    case "jevTransport":
+      settings.jevTransport = value as AdvisorSettings["jevTransport"];
+      break;
     default:
       if (BOOLEAN_SETTING_IDS.has(id)) {
         (settings as unknown as Record<string, SettingValue | boolean>)[id] =

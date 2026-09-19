@@ -9,6 +9,18 @@ export const MAX_CONTEXT_MAX_CHARS = Number.MAX_SAFE_INTEGER;
 export const DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES = DEFAULT_MAX_LINES;
 export const DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES = DEFAULT_MAX_BYTES;
 export const DEFAULT_ADVISOR_GIT_CONTEXT_MAX_CHARS = 20_000;
+export const DEFAULT_JEV_MODEL = "jev-latest";
+// Provisional: the latency benchmark was dropped from scope; revisit if live
+// measurements suggest a different bound.
+export const DEFAULT_JEV_TIMEOUT_MS = 8000;
+export const DEFAULT_JEV_DIGEST_MAX_CHARS = 4000;
+export const DEFAULT_JEV_PRICE_PER_MTOK = 0.042;
+export type JevTransport = "auto" | "typesafe" | "openrouter";
+export const JEV_TRANSPORTS: JevTransport[] = [
+  "auto",
+  "typesafe",
+  "openrouter",
+];
 
 export type AdvisorToolPolicy = "full" | "summary" | "exclude";
 export type AdvisorToolPolicies = Record<string, AdvisorToolPolicy>;
@@ -40,6 +52,11 @@ export interface AdvisorConfig {
   advisorGitContext?: GitContextLevel;
   advisorGitContextMaxChars?: number;
   advisorHerdrIntegration?: boolean;
+  advisorJevDigestMaxChars?: number;
+  advisorJevModel?: string;
+  advisorJevPricePerMtok?: number;
+  advisorJevTimeoutMs?: number;
+  advisorJevTransport?: JevTransport;
   advisorLoopThreshold?: number;
   advisorMaxCallsPerSession?: number;
   advisorOutcomeLogging?: boolean;

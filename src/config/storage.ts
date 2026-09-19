@@ -36,7 +36,12 @@ const currentConfigState = (): ConfigState =>
 const sameConfigValue = <Value>(left: Value, right: Value) =>
   JSON.stringify(left) === JSON.stringify(right);
 
-const readExistingConfig = (path: string): Record<string, unknown> => {
+/** Keys advisor.json may hold that are not AdvisorConfig settings but are
+ * still legitimate (hand-placed secrets). They stay out of CONFIG_SCHEMA, are
+ * preserved like any unknown key, and never trigger the typo warning. */
+const RESERVED_ADVISOR_JSON_KEYS = new Set(["typesafe_api_key"]);
+
+export const readExistingConfig = (path: string): Record<string, unknown> => {
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
@@ -139,7 +144,7 @@ export const loadConfig = (_ctx: ExtensionContext) => {
     applyConfig(globalConfig);
     const unknownKeys = unknownConfigKeys(
       globalConfig as Record<string, unknown>
-    );
+    ).filter((key) => !RESERVED_ADVISOR_JSON_KEYS.has(key));
     const warningIdentity = `${global}:${configIdentity(global)}`;
     if (
       unknownKeys.length > 0 &&

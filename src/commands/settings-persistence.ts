@@ -12,6 +12,11 @@ import {
   setAdvisorGitContextMaxCharsRef,
   setAdvisorGitContextRef,
   setAdvisorHerdrIntegrationRef,
+  setAdvisorJevDigestMaxCharsRef,
+  setAdvisorJevModelRef,
+  setAdvisorJevPricePerMtokRef,
+  setAdvisorJevTimeoutMsRef,
+  setAdvisorJevTransportRef,
   setAdvisorLoopThresholdRef,
   setAdvisorMaxCallsPerSessionRef,
   setAdvisorOutcomeLoggingRef,
@@ -31,6 +36,12 @@ import {
   setSimpleModeRef,
 } from "../config/state.ts";
 import { saveConfig, saveGlobalOutcomeLogging } from "../config/storage.ts";
+import {
+  DEFAULT_JEV_DIGEST_MAX_CHARS,
+  DEFAULT_JEV_MODEL,
+  DEFAULT_JEV_PRICE_PER_MTOK,
+  DEFAULT_JEV_TIMEOUT_MS,
+} from "../config/types.ts";
 import type { AdvisorSettings } from "../ui/types.ts";
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one settings form maps every persisted control.
@@ -56,6 +67,15 @@ const applyAdvisorSettings = (settings: AdvisorSettings) => {
   setAlwaysOnRef(settings.alwaysOn ?? false);
   setAdvisorFailureModeRef(settings.failureMode ?? "block-session");
   setAdvisorHerdrIntegrationRef(settings.herdrIntegration ?? true);
+  setAdvisorJevModelRef(settings.jevModel ?? DEFAULT_JEV_MODEL);
+  setAdvisorJevTimeoutMsRef(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS);
+  setAdvisorJevDigestMaxCharsRef(
+    settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS
+  );
+  setAdvisorJevPricePerMtokRef(
+    settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK
+  );
+  setAdvisorJevTransportRef(settings.jevTransport ?? "auto");
   setAdvisorToolResultMaxLinesRef(settings.toolResultMaxLines ?? 2000);
   setAdvisorToolResultMaxBytesRef(settings.toolResultMaxBytes ?? 50 * 1024);
   setAdvisorRedactSecretsRef(settings.redactSecrets ?? false);

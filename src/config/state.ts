@@ -5,7 +5,12 @@ import {
   DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES,
   DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES,
   DEFAULT_CONTEXT_MAX_CHARS,
+  DEFAULT_JEV_DIGEST_MAX_CHARS,
+  DEFAULT_JEV_MODEL,
+  DEFAULT_JEV_PRICE_PER_MTOK,
+  DEFAULT_JEV_TIMEOUT_MS,
   type GateFailureMode,
+  type JevTransport,
 } from "./types.ts";
 
 // An empty ref means no model has been selected yet.
@@ -30,6 +35,11 @@ export let simpleModeRef = false;
 export let alwaysOnRef = false;
 export let advisorFailureModeRef: GateFailureMode = "block-session";
 export let advisorHerdrIntegrationRef = true;
+export let advisorJevModelRef = DEFAULT_JEV_MODEL;
+export let advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
+export let advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
+export let advisorJevPricePerMtokRef = DEFAULT_JEV_PRICE_PER_MTOK;
+export let advisorJevTransportRef: JevTransport = "auto";
 export let advisorToolResultMaxLinesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES;
 export let advisorToolResultMaxBytesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES;
 export let advisorRedactSecretsRef = false;
@@ -117,6 +127,21 @@ export const setAdvisorFailureModeRef = (value: GateFailureMode) => {
 export const setAdvisorHerdrIntegrationRef = (enabled: boolean) => {
   advisorHerdrIntegrationRef = enabled;
 };
+export const setAdvisorJevModelRef = (model: string | undefined) => {
+  advisorJevModelRef = model?.trim() || DEFAULT_JEV_MODEL;
+};
+export const setAdvisorJevTimeoutMsRef = (value: number) => {
+  advisorJevTimeoutMsRef = value;
+};
+export const setAdvisorJevDigestMaxCharsRef = (value: number) => {
+  advisorJevDigestMaxCharsRef = value;
+};
+export const setAdvisorJevPricePerMtokRef = (value: number) => {
+  advisorJevPricePerMtokRef = value;
+};
+export const setAdvisorJevTransportRef = (value: JevTransport) => {
+  advisorJevTransportRef = value;
+};
 export const setAdvisorToolResultMaxLinesRef = (value: number) => {
   advisorToolResultMaxLinesRef = value;
 };
@@ -172,6 +197,11 @@ export const getAdvisorSettings = () => ({
   gitContext: advisorGitContextRef,
   gitContextMaxChars: advisorGitContextMaxCharsRef,
   herdrIntegration: advisorHerdrIntegrationRef,
+  jevDigestMaxChars: advisorJevDigestMaxCharsRef,
+  jevModel: advisorJevModelRef,
+  jevPricePerMtok: advisorJevPricePerMtokRef,
+  jevTimeoutMs: advisorJevTimeoutMsRef,
+  jevTransport: advisorJevTransportRef,
   loopThreshold: advisorLoopThresholdRef,
   maxCallsPerSession: advisorMaxCallsPerSessionRef,
   outcomeLogging: advisorOutcomeLoggingRef,

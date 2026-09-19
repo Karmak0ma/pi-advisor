@@ -8,6 +8,15 @@ var MAX_CONTEXT_MAX_CHARS = Number.MAX_SAFE_INTEGER;
 var DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES = DEFAULT_MAX_LINES;
 var DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES = DEFAULT_MAX_BYTES;
 var DEFAULT_ADVISOR_GIT_CONTEXT_MAX_CHARS = 20000;
+var DEFAULT_JEV_MODEL = "jev-latest";
+var DEFAULT_JEV_TIMEOUT_MS = 8000;
+var DEFAULT_JEV_DIGEST_MAX_CHARS = 4000;
+var DEFAULT_JEV_PRICE_PER_MTOK = 0.042;
+var JEV_TRANSPORTS = [
+  "auto",
+  "typesafe",
+  "openrouter"
+];
 var ADVISOR_TOOL_POLICIES = [
   "full",
   "summary",
@@ -41,6 +50,11 @@ var simpleModeRef = false;
 var alwaysOnRef = false;
 var advisorFailureModeRef = "block-session";
 var advisorHerdrIntegrationRef = true;
+var advisorJevModelRef = DEFAULT_JEV_MODEL;
+var advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
+var advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
+var advisorJevPricePerMtokRef = DEFAULT_JEV_PRICE_PER_MTOK;
+var advisorJevTransportRef = "auto";
 var advisorToolResultMaxLinesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES;
 var advisorToolResultMaxBytesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES;
 var advisorRedactSecretsRef = false;
@@ -119,6 +133,21 @@ var setAdvisorFailureModeRef = (value) => {
 var setAdvisorHerdrIntegrationRef = (enabled) => {
   advisorHerdrIntegrationRef = enabled;
 };
+var setAdvisorJevModelRef = (model) => {
+  advisorJevModelRef = model?.trim() || DEFAULT_JEV_MODEL;
+};
+var setAdvisorJevTimeoutMsRef = (value) => {
+  advisorJevTimeoutMsRef = value;
+};
+var setAdvisorJevDigestMaxCharsRef = (value) => {
+  advisorJevDigestMaxCharsRef = value;
+};
+var setAdvisorJevPricePerMtokRef = (value) => {
+  advisorJevPricePerMtokRef = value;
+};
+var setAdvisorJevTransportRef = (value) => {
+  advisorJevTransportRef = value;
+};
 var setAdvisorToolResultMaxLinesRef = (value) => {
   advisorToolResultMaxLinesRef = value;
 };
@@ -169,6 +198,11 @@ var getAdvisorSettings = () => ({
   gitContext: advisorGitContextRef,
   gitContextMaxChars: advisorGitContextMaxCharsRef,
   herdrIntegration: advisorHerdrIntegrationRef,
+  jevDigestMaxChars: advisorJevDigestMaxCharsRef,
+  jevModel: advisorJevModelRef,
+  jevPricePerMtok: advisorJevPricePerMtokRef,
+  jevTimeoutMs: advisorJevTimeoutMsRef,
+  jevTransport: advisorJevTransportRef,
   loopThreshold: advisorLoopThresholdRef,
   maxCallsPerSession: advisorMaxCallsPerSessionRef,
   outcomeLogging: advisorOutcomeLoggingRef,
@@ -312,6 +346,10 @@ var isValidMaxCallsPerSession = (value) => nonNegativeSafeInteger(value);
 var isValidGateFailureMode = (value) => typeof value === "string" && GATE_FAILURE_MODES.includes(value);
 var isValidToolResultMaxLines = (value) => nonNegativeSafeInteger(value);
 var isValidToolResultMaxBytes = (value) => nonNegativeSafeInteger(value);
+var isValidJevTimeoutMs = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+var isValidJevDigestMaxChars = (value) => nonNegativeSafeInteger(value);
+var isValidJevPricePerMtok = (value) => typeof value === "number" && Number.isFinite(value) && value > 0;
+var isValidJevTransport = (value) => typeof value === "string" && JEV_TRANSPORTS.includes(value);
 var CONFIG_SCHEMA = {
   advisor: {
     accepted: "a provider/model string",
@@ -380,6 +418,40 @@ var CONFIG_SCHEMA = {
     current: () => advisorHerdrIntegrationRef,
     persisted: true,
     type: "boolean"
+  },
+  advisorJevDigestMaxChars: {
+    accepted: "a non-negative safe integer",
+    current: () => advisorJevDigestMaxCharsRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevDigestMaxChars
+  },
+  advisorJevModel: {
+    accepted: "a non-empty string",
+    current: () => advisorJevModelRef,
+    persisted: true,
+    type: "string"
+  },
+  advisorJevPricePerMtok: {
+    accepted: "a positive number",
+    current: () => advisorJevPricePerMtokRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevPricePerMtok
+  },
+  advisorJevTimeoutMs: {
+    accepted: "a positive safe integer",
+    current: () => advisorJevTimeoutMsRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevTimeoutMs
+  },
+  advisorJevTransport: {
+    accepted: JEV_TRANSPORTS.join(", "),
+    current: () => advisorJevTransportRef,
+    persisted: true,
+    type: "enum",
+    validate: isValidJevTransport
   },
   advisorLoopThreshold: {
     accepted: "a safe integer of at least 2",
@@ -629,6 +701,11 @@ var resetDefaults = () => {
   setAlwaysOnRef(false);
   setAdvisorFailureModeRef("block-session");
   setAdvisorHerdrIntegrationRef(true);
+  setAdvisorJevModelRef(DEFAULT_JEV_MODEL);
+  setAdvisorJevTimeoutMsRef(DEFAULT_JEV_TIMEOUT_MS);
+  setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
+  setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
+  setAdvisorJevTransportRef("auto");
   setAdvisorToolResultMaxLinesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES);
   setAdvisorToolResultMaxBytesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_BYTES);
   setAdvisorRedactSecretsRef(false);
@@ -676,6 +753,11 @@ var applyConfig = (config) => {
   applyOptionalConfig(config, "alwaysOn", setAlwaysOnRef);
   applyOptionalConfig(config, "gateFailureMode", setAdvisorFailureModeRef);
   applyOptionalConfig(config, "advisorHerdrIntegration", setAdvisorHerdrIntegrationRef);
+  applyNonEmptyStringConfig(config.advisorJevModel, setAdvisorJevModelRef);
+  applyOptionalConfig(config, "advisorJevTimeoutMs", setAdvisorJevTimeoutMsRef);
+  applyOptionalConfig(config, "advisorJevDigestMaxChars", setAdvisorJevDigestMaxCharsRef);
+  applyOptionalConfig(config, "advisorJevPricePerMtok", setAdvisorJevPricePerMtokRef);
+  applyOptionalConfig(config, "advisorJevTransport", setAdvisorJevTransportRef);
   applyOptionalConfig(config, "advisorToolResultMaxLines", setAdvisorToolResultMaxLinesRef);
   applyOptionalConfig(config, "advisorToolResultMaxBytes", setAdvisorToolResultMaxBytesRef);
   applyOptionalConfig(config, "advisorRedactSecrets", setAdvisorRedactSecretsRef);
@@ -690,6 +772,7 @@ var applyConfig = (config) => {
 // src/config/storage.ts
 var currentConfigState = () => Object.fromEntries(SAVED_CONFIG_KEYS.map((key) => [key, CONFIG_SCHEMA[key].current()]));
 var sameConfigValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+var RESERVED_ADVISOR_JSON_KEYS = new Set(["typesafe_api_key"]);
 var readExistingConfig = (path) => {
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -751,7 +834,7 @@ var loadConfig = (_ctx) => {
   setPersistedModelRefs(configuredModelRef(globalConfig?.advisor), configuredModelRef(globalConfig?.executor));
   if (globalConfig) {
     applyConfig(globalConfig);
-    const unknownKeys = unknownConfigKeys(globalConfig);
+    const unknownKeys = unknownConfigKeys(globalConfig).filter((key) => !RESERVED_ADVISOR_JSON_KEYS.has(key));
     const warningIdentity = `${global}:${configIdentity(global)}`;
     if (unknownKeys.length > 0 && _ctx.hasUI && !warnedUnknownConfigIdentities.has(warningIdentity)) {
       _ctx.ui.notify(`Advisor configuration at ${global} contains unrecognized key(s) ${unknownKeys.map((key) => JSON.stringify(key)).join(", ")}. They were preserved but ignored; check for typos or upgrade pi-advisor.`, "warning");
@@ -4485,6 +4568,55 @@ var toggle = (id, label, description, value, defaultValue) => ({
   label,
   values: TOGGLE_VALUES
 });
+var jevItems = (settings, theme, tui) => [
+  {
+    currentValue: settings.jevModel ?? "jev-latest",
+    description: "TypeSafe Jev model used for screening and turn-gate checks.",
+    id: "jevModel",
+    label: "Jev model",
+    submenu: (_currentValue, done) => new TextSettingSubmenu({
+      description: "Enter a TypeSafe model name (for example jev-latest or jev-1.13.0).",
+      initial: settings.jevModel ?? "jev-latest",
+      onCancel: done,
+      onSubmit: (value) => ({ value: value.trim() || "jev-latest" }),
+      theme,
+      title: "Jev model",
+      tui
+    })
+  },
+  {
+    currentValue: String(settings.jevTimeoutMs ?? 8000),
+    description: "Total wall-time budget for one Jev call, including retries.",
+    id: "jevTimeoutMs",
+    label: "Jev timeout ms",
+    values: numericValues(settings.jevTimeoutMs ?? 8000, [1000, 2000, 5000, 8000, 15000, 30000])
+  },
+  {
+    currentValue: String(settings.jevDigestMaxChars ?? 4000),
+    description: "Conversation characters sent to Jev as screening evidence.",
+    id: "jevDigestMaxChars",
+    label: "Jev digest chars",
+    values: numericValues(settings.jevDigestMaxChars ?? 4000, [0, 1000, 2000, 4000, 8000, 15000])
+  },
+  {
+    currentValue: String(settings.jevPricePerMtok ?? 0.042),
+    description: "Assumed TypeSafe price per million input tokens for cost lines.",
+    id: "jevPricePerMtok",
+    label: "Jev price/Mtok",
+    values: numericValues(settings.jevPricePerMtok ?? 0.042, [0.01, 0.02, 0.042, 0.05, 0.1])
+  },
+  {
+    currentValue: settings.jevTransport ?? "auto",
+    description: "How Jev calls travel: auto reuses an OpenRouter login when no TypeSafe key is set.",
+    id: "jevTransport",
+    label: "Jev transport",
+    values: withCurrentValue(settings.jevTransport ?? "auto", [
+      "auto",
+      "typesafe",
+      "openrouter"
+    ])
+  }
+];
 var createSettingsItems = ({
   effortLevels,
   presets,
@@ -4621,7 +4753,7 @@ var createSettingsItems = ({
       title: "Tool disclosure policies",
       tui
     })
-  }, toggle("trackedFileContent", "Tracked file content", "Allow tracked file contents to be sent with Advisor context.", settings.trackedFileContent, false), toggle("untrackedContent", "Untracked file content", "Allow untracked file contents to be sent with Advisor context.", settings.untrackedContent, false), toggle("outcomeLogging", "Outcome logging (global)", "Allow anonymized Advisor outcomes to be logged globally.", settings.outcomeLogging, false));
+  }, toggle("trackedFileContent", "Tracked file content", "Allow tracked file contents to be sent with Advisor context.", settings.trackedFileContent, false), toggle("untrackedContent", "Untracked file content", "Allow untracked file contents to be sent with Advisor context.", settings.untrackedContent, false), toggle("outcomeLogging", "Outcome logging (global)", "Allow anonymized Advisor outcomes to be logged globally.", settings.outcomeLogging, false), ...jevItems(settings, theme, tui));
   return items;
 };
 
@@ -4757,6 +4889,21 @@ var mutateAdvisorSettings = (settings, id, value, presets) => {
       break;
     case "gitContextMaxChars":
       settings.gitContextMaxChars = Number(value);
+      break;
+    case "jevModel":
+      settings.jevModel = value.trim() || "jev-latest";
+      break;
+    case "jevTimeoutMs":
+      settings.jevTimeoutMs = Number(value);
+      break;
+    case "jevDigestMaxChars":
+      settings.jevDigestMaxChars = Number(value);
+      break;
+    case "jevPricePerMtok":
+      settings.jevPricePerMtok = Number(value);
+      break;
+    case "jevTransport":
+      settings.jevTransport = value;
       break;
     default:
       if (BOOLEAN_SETTING_IDS.has(id)) {
@@ -4894,6 +5041,11 @@ var applyAdvisorSettings = (settings) => {
   setAlwaysOnRef(settings.alwaysOn ?? false);
   setAdvisorFailureModeRef(settings.failureMode ?? "block-session");
   setAdvisorHerdrIntegrationRef(settings.herdrIntegration ?? true);
+  setAdvisorJevModelRef(settings.jevModel ?? DEFAULT_JEV_MODEL);
+  setAdvisorJevTimeoutMsRef(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS);
+  setAdvisorJevDigestMaxCharsRef(settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS);
+  setAdvisorJevPricePerMtokRef(settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK);
+  setAdvisorJevTransportRef(settings.jevTransport ?? "auto");
   setAdvisorToolResultMaxLinesRef(settings.toolResultMaxLines ?? 2000);
   setAdvisorToolResultMaxBytesRef(settings.toolResultMaxBytes ?? 50 * 1024);
   setAdvisorRedactSecretsRef(settings.redactSecrets ?? false);
