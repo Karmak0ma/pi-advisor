@@ -57,6 +57,17 @@ const INVALID_SETTINGS: [Record<string, unknown>, RegExp][] = [
   [{ advisorJevTransport: "vercel" }, /advisorJevTransport/],
 ];
 
+const focusJevFilterRow = (selector: any) => {
+  for (let presses = 0; presses < 60; presses += 1) {
+    if (plainScreen(selector).includes("→ Jev consultation filter")) {
+      selector.handleInput("\r");
+      return;
+    }
+    selector.handleInput("\u001b[B");
+  }
+  throw new Error("Jev consultation filter row not reachable");
+};
+
 describe("Jev shared settings", () => {
   test("default to safe values and validate their types", async () => {
     await withAgentDir({}, () => {
@@ -81,6 +92,7 @@ describe("Jev shared settings", () => {
     await withAgentDir(
       {
         advisorJevDigestMaxChars: 8000,
+        advisorJevFilterEnabled: true,
         advisorJevModel: "jev-1.13.0",
         advisorJevPricePerMtok: 0.05,
         advisorJevTimeoutMs: 15_000,
@@ -100,6 +112,7 @@ describe("Jev shared settings", () => {
         saveConfig({ cwd: "/", isProjectTrusted: () => false } as any);
         expect(savedConfig(process.env.PI_CODING_AGENT_DIR as string)).toEqual({
           advisorJevDigestMaxChars: 8000,
+          advisorJevFilterEnabled: true,
           advisorJevModel: "jev-latest",
           advisorJevPricePerMtok: 0.05,
           advisorJevTimeoutMs: 30_000,
@@ -139,6 +152,18 @@ describe("Jev shared settings", () => {
     changeSetting(selector, "Jev transport");
     expect(saved.at(-1)).toMatchObject({ jevTransport: "typesafe" });
     expect(plainScreen(selector)).toContain("typesafe");
+    selector.dispose();
+  });
+
+  test("the Jev consultation filter row opens the guided setup submenu", () => {
+    const { saved, selector } = openSelector();
+    const screenText = plainScreen(selector);
+    expect(screenText).not.toContain("Jev consultation filter");
+    focusJevFilterRow(selector);
+    const submenu = (selector as any).settingsList.submenuComponent;
+    expect(submenu?.constructor?.name).toBe("JevSetupSubmenu");
+    submenu.options.done("On");
+    expect(saved.at(-1)).toMatchObject({ jevFilterEnabled: true });
     selector.dispose();
   });
 

@@ -12,6 +12,7 @@ import {
   advisorGitContextRef,
   advisorHerdrIntegrationRef,
   advisorJevDigestMaxCharsRef,
+  advisorJevFilterEnabledRef,
   advisorJevModelRef,
   advisorJevPricePerMtokRef,
   advisorJevTimeoutMsRef,
@@ -196,6 +197,12 @@ export const CONFIG_SCHEMA = {
     persisted: true,
     type: "number",
     validate: isValidJevDigestMaxChars,
+  },
+  advisorJevFilterEnabled: {
+    accepted: "true or false",
+    current: () => advisorJevFilterEnabledRef,
+    persisted: true,
+    type: "boolean",
   },
   advisorJevModel: {
     accepted: "a non-empty string",

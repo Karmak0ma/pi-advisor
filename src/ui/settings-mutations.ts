@@ -70,6 +70,9 @@ export const mutateAdvisorSettings = (
     case "gitContextMaxChars":
       settings.gitContextMaxChars = Number(value);
       break;
+    case "jevFilter":
+      settings.jevFilterEnabled = value === "On";
+      break;
     case "jevModel":
       settings.jevModel = value.trim() || "jev-latest";
       break;

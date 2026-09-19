@@ -35,6 +35,7 @@ export let simpleModeRef = false;
 export let alwaysOnRef = false;
 export let advisorFailureModeRef: GateFailureMode = "block-session";
 export let advisorHerdrIntegrationRef = true;
+export let advisorJevFilterEnabledRef = false;
 export let advisorJevModelRef = DEFAULT_JEV_MODEL;
 export let advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 export let advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
@@ -127,6 +128,9 @@ export const setAdvisorFailureModeRef = (value: GateFailureMode) => {
 export const setAdvisorHerdrIntegrationRef = (enabled: boolean) => {
   advisorHerdrIntegrationRef = enabled;
 };
+export const setAdvisorJevFilterEnabledRef = (enabled: boolean) => {
+  advisorJevFilterEnabledRef = enabled;
+};
 export const setAdvisorJevModelRef = (model: string | undefined) => {
   advisorJevModelRef = model?.trim() || DEFAULT_JEV_MODEL;
 };
@@ -198,6 +202,7 @@ export const getAdvisorSettings = () => ({
   gitContextMaxChars: advisorGitContextMaxCharsRef,
   herdrIntegration: advisorHerdrIntegrationRef,
   jevDigestMaxChars: advisorJevDigestMaxCharsRef,
+  jevFilterEnabled: advisorJevFilterEnabledRef,
   jevModel: advisorJevModelRef,
   jevPricePerMtok: advisorJevPricePerMtokRef,
   jevTimeoutMs: advisorJevTimeoutMsRef,

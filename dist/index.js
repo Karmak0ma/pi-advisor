@@ -50,6 +50,7 @@ var simpleModeRef = false;
 var alwaysOnRef = false;
 var advisorFailureModeRef = "block-session";
 var advisorHerdrIntegrationRef = true;
+var advisorJevFilterEnabledRef = false;
 var advisorJevModelRef = DEFAULT_JEV_MODEL;
 var advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 var advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
@@ -133,6 +134,9 @@ var setAdvisorFailureModeRef = (value) => {
 var setAdvisorHerdrIntegrationRef = (enabled) => {
   advisorHerdrIntegrationRef = enabled;
 };
+var setAdvisorJevFilterEnabledRef = (enabled) => {
+  advisorJevFilterEnabledRef = enabled;
+};
 var setAdvisorJevModelRef = (model) => {
   advisorJevModelRef = model?.trim() || DEFAULT_JEV_MODEL;
 };
@@ -199,6 +203,7 @@ var getAdvisorSettings = () => ({
   gitContextMaxChars: advisorGitContextMaxCharsRef,
   herdrIntegration: advisorHerdrIntegrationRef,
   jevDigestMaxChars: advisorJevDigestMaxCharsRef,
+  jevFilterEnabled: advisorJevFilterEnabledRef,
   jevModel: advisorJevModelRef,
   jevPricePerMtok: advisorJevPricePerMtokRef,
   jevTimeoutMs: advisorJevTimeoutMsRef,
@@ -425,6 +430,12 @@ var CONFIG_SCHEMA = {
     persisted: true,
     type: "number",
     validate: isValidJevDigestMaxChars
+  },
+  advisorJevFilterEnabled: {
+    accepted: "true or false",
+    current: () => advisorJevFilterEnabledRef,
+    persisted: true,
+    type: "boolean"
   },
   advisorJevModel: {
     accepted: "a non-empty string",
@@ -702,6 +713,7 @@ var resetDefaults = () => {
   setAdvisorFailureModeRef("block-session");
   setAdvisorHerdrIntegrationRef(true);
   setAdvisorJevModelRef(DEFAULT_JEV_MODEL);
+  setAdvisorJevFilterEnabledRef(false);
   setAdvisorJevTimeoutMsRef(DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
@@ -753,6 +765,7 @@ var applyConfig = (config) => {
   applyOptionalConfig(config, "alwaysOn", setAlwaysOnRef);
   applyOptionalConfig(config, "gateFailureMode", setAdvisorFailureModeRef);
   applyOptionalConfig(config, "advisorHerdrIntegration", setAdvisorHerdrIntegrationRef);
+  applyOptionalConfig(config, "advisorJevFilterEnabled", setAdvisorJevFilterEnabledRef);
   applyNonEmptyStringConfig(config.advisorJevModel, setAdvisorJevModelRef);
   applyOptionalConfig(config, "advisorJevTimeoutMs", setAdvisorJevTimeoutMsRef);
   applyOptionalConfig(config, "advisorJevDigestMaxChars", setAdvisorJevDigestMaxCharsRef);
@@ -4417,7 +4430,7 @@ var registerCommandRenderers = (runtime) => {
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import {
   SettingsList,
-  truncateToWidth as truncateToWidth5
+  truncateToWidth as truncateToWidth7
 } from "@earendil-works/pi-tui";
 
 // src/ui/settings-formatting.ts
@@ -4498,14 +4511,745 @@ var rainbowGradient = (text, startedAt) => {
   }).join("").concat("\x1B[0m");
 };
 
-// src/ui/text-setting-submenu.ts
+// src/ui/jev-setup-submenu.ts
+import {
+  truncateToWidth as truncateToWidth5
+} from "@earendil-works/pi-tui";
+
+// node_modules/@typesafe-ai/sdk/dist/index.mjs
+var range = (from, to) => Array.from({ length: to - from }, (_, i) => from + i);
+var DEFAULT_RETRY_POLICY = {
+  maxRetries: 2,
+  backoffInitialMs: 500,
+  backoffMaxMs: 5000,
+  backoffJitter: 0.25,
+  httpStatuses: /* @__PURE__ */ new Set([
+    408,
+    429,
+    ...range(500, 600)
+  ]),
+  respectRetryAfter: true,
+  maxRetryAfterMs: 60000,
+  apiConnectionError: true,
+  apiTimeoutError: true
+};
+DEFAULT_RETRY_POLICY.maxRetries;
+var noul = (instructions = null, criteria) => ({
+  type: "noul",
+  instructions,
+  criteria
+});
+var g = globalThis;
+var isBrowser = () => typeof g.window !== "undefined" && typeof g.window.document !== "undefined" && typeof g.navigator !== "undefined";
+var describeRuntime = () => {
+  const platform = g.process?.platform && g.process?.arch ? ` (${g.process.platform}; ${g.process.arch})` : "";
+  if (g.Bun?.version)
+    return `bun/${g.Bun.version}${platform}`;
+  if (g.Deno?.version?.deno)
+    return `deno/${g.Deno.version.deno}${platform}`;
+  if (g.EdgeRuntime !== undefined)
+    return "vercel-edge";
+  if (g.navigator?.userAgent === "Cloudflare-Workers")
+    return "cloudflare-workers";
+  if (g.process?.versions?.node)
+    return `node/${g.process.versions.node}${platform}`;
+  if (isBrowser())
+    return "browser";
+  return "unknown";
+};
+var RUNTIME = describeRuntime();
+
+// src/jev/client.ts
+class JevFailure extends Error {
+  category;
+  constructor(category, message) {
+    super(message);
+    this.name = "JevFailure";
+    this.category = category;
+  }
+}
+var ENDPOINTS = {
+  openrouter: "https://openrouter.ai/api/alpha/decisions",
+  typesafe: "https://api.typesafe.ai/v1/systemone"
+};
+var RETRYABLE_STATUSES = new Set([408, 429, ...range2(500, 599)]);
+var RETRY_BACKOFF_MS = 250;
+var MAX_ATTEMPTS = 2;
+function range2(from, to) {
+  return Array.from({ length: to - from + 1 }, (_, index) => from + index);
+}
+var finiteTokens = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+var errorDetail = (error) => {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    return String(error.message);
+  }
+  return "";
+};
+var statusCategory = (status) => {
+  if (status === 401 || status === 403) {
+    return "auth";
+  }
+  if (status === 400 || status === 422) {
+    return "malformed";
+  }
+  return "error";
+};
+var openRouterModelId = (model) => model.includes("/") ? model : `~typesafe/${model}`;
+
+class JevClient {
+  #apiKey;
+  #endpoint;
+  #fetch;
+  #model;
+  #pricePerMtok;
+  #timeoutMs;
+  constructor({
+    apiKey,
+    fetch,
+    model,
+    pricePerMtok,
+    timeoutMs,
+    transport
+  }) {
+    this.#apiKey = apiKey;
+    this.#endpoint = ENDPOINTS[transport];
+    this.#fetch = fetch ?? globalThis.fetch.bind(globalThis);
+    this.#model = transport === "openrouter" ? openRouterModelId(model) : model;
+    this.#pricePerMtok = pricePerMtok;
+    this.#timeoutMs = timeoutMs;
+  }
+  async ask(state, questions, signal) {
+    const deadline = new AbortController;
+    const abortFromCaller = () => deadline.abort(signal?.reason);
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+    if (signal?.aborted) {
+      abortFromCaller();
+    }
+    let deadlineHit = false;
+    const timer = setTimeout(() => {
+      deadlineHit = true;
+      deadline.abort(new Error("Jev wall-time budget elapsed"));
+    }, this.#timeoutMs);
+    timer.unref?.();
+    const body = JSON.stringify({
+      model: this.#model,
+      questions,
+      state
+    });
+    try {
+      let outcome = {};
+      for (let attempt = 1;; attempt += 1) {
+        outcome = await this.#attempt(body, deadline.signal);
+        if (!outcome.retryable || attempt >= MAX_ATTEMPTS) {
+          break;
+        }
+        await this.#backoff(deadline.signal);
+        if (deadline.signal.aborted) {
+          break;
+        }
+      }
+      return this.#settle(outcome, deadlineHit, signal);
+    } catch (error) {
+      if (signal?.aborted && !deadlineHit) {
+        throw error;
+      }
+      if (error instanceof JevFailure) {
+        throw error;
+      }
+      const message = redactSecrets(error instanceof Error ? error.message : String(error));
+      throw deadlineHit ? new JevFailure("timeout", `Jev call exceeded its ${this.#timeoutMs} ms wall-time budget.`) : new JevFailure("error", message);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abortFromCaller);
+    }
+  }
+  #settle(outcome, deadlineHit, signal) {
+    if (outcome.answers) {
+      return this.#result(outcome);
+    }
+    if (deadlineHit && outcome.failure?.category !== "auth") {
+      throw new JevFailure("timeout", `Jev call exceeded its ${this.#timeoutMs} ms wall-time budget.`);
+    }
+    if (outcome.failure) {
+      throw outcome.failure;
+    }
+    if (signal?.aborted) {
+      throw new Error("Jev call aborted by the caller.");
+    }
+    throw new JevFailure("error", "Jev call failed.");
+  }
+  async#backoff(signal) {
+    if (signal.aborted) {
+      return;
+    }
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, RETRY_BACKOFF_MS);
+      timer.unref?.();
+      const onAbort = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+  async#attempt(body, signal) {
+    if (signal.aborted) {
+      return { retryable: false };
+    }
+    let response;
+    try {
+      response = await this.#fetch(this.#endpoint, {
+        body,
+        headers: {
+          authorization: `Bearer ${this.#apiKey}`,
+          "content-type": "application/json"
+        },
+        method: "POST",
+        signal
+      });
+    } catch (error) {
+      if (signal.aborted) {
+        return { retryable: false };
+      }
+      return {
+        retryable: true,
+        ...this.#connectionFailure(error)
+      };
+    }
+    if (response.ok) {
+      return this.#parseSuccess(response);
+    }
+    const failure = await this.#failureFromStatus(response);
+    return {
+      failure,
+      retryable: RETRYABLE_STATUSES.has(response.status)
+    };
+  }
+  #connectionFailure(error) {
+    const message = redactSecrets(error instanceof Error ? error.message : String(error));
+    return {
+      failure: new JevFailure("network", `Jev connection failed: ${message}`)
+    };
+  }
+  async#failureFromStatus(response) {
+    let detail = "";
+    try {
+      const parsed = await response.json();
+      const error = parsed?.error;
+      detail = errorDetail(error);
+    } catch {
+      detail = "";
+    }
+    const message = redactSecrets(`Jev ${this.#transportLabel()} request failed with HTTP ${response.status}${detail ? `: ${detail}` : ""}.`);
+    return new JevFailure(statusCategory(response.status), message);
+  }
+  #transportLabel() {
+    return this.#endpoint === ENDPOINTS.openrouter ? "OpenRouter" : "TypeSafe";
+  }
+  async#parseSuccess(response) {
+    let parsed;
+    try {
+      parsed = await response.json();
+    } catch (error) {
+      return {
+        failure: new JevFailure("malformed", `Jev response was not JSON: ${redactSecrets(error instanceof Error ? error.message : String(error))}`)
+      };
+    }
+    const record = parsed;
+    if (!record || typeof record !== "object" || !record.answers || typeof record.answers !== "object") {
+      return {
+        failure: new JevFailure("malformed", "Jev response did not include an answers object.")
+      };
+    }
+    return {
+      answers: record.answers,
+      model: typeof record.model === "string" ? record.model : this.#model,
+      usage: record.usage
+    };
+  }
+  #result(outcome) {
+    const usage = outcome.usage;
+    const inputTokens = finiteTokens(usage?.input_tokens);
+    const outputTokens = finiteTokens(usage?.output_tokens);
+    const price = this.#pricePerMtok ?? advisorJevPricePerMtokRef;
+    return {
+      answers: outcome.answers ?? {},
+      model: outcome.model ?? this.#model,
+      usage: {
+        cost: inputTokens / 1e6 * price,
+        inputTokens,
+        outputTokens
+      }
+    };
+  }
+}
+
+// src/jev/key-store.ts
+import { writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join4 } from "node:path";
+import { getAgentDir as getAgentDir3 } from "@earendil-works/pi-coding-agent";
+var TYPESAFE_KEY_ENV_VAR = "TYPESAFE_API_KEY";
+var TYPESAFE_KEY_SERVICE = "pi-advisor";
+var TYPESAFE_KEY_NAME = "typesafe-api-key";
+var TYPESAFE_KEY_CONFIG_FIELD = "typesafe_api_key";
+var runtimeSecrets = () => globalThis.Bun?.secrets;
+var hasRuntimeSecretStore = () => runtimeSecrets() !== undefined;
+var normalizeKey = (value) => value?.trim() || undefined;
+var readAdvisorJsonConfig = () => readExistingConfig(join4(getAgentDir3(), "advisor.json"));
+var messageOf = (error) => redactSecrets(error instanceof Error ? error.message : String(error));
+var resolveTypeSafeKey = async (deps = {}) => {
+  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
+  if (secrets) {
+    try {
+      const stored = normalizeKey(await secrets.get({
+        name: TYPESAFE_KEY_NAME,
+        service: TYPESAFE_KEY_SERVICE
+      }));
+      if (stored) {
+        return { key: stored, source: "bun-secrets" };
+      }
+    } catch {}
+  }
+  const env = deps.env ?? process.env;
+  const fromEnv = normalizeKey(env[TYPESAFE_KEY_ENV_VAR]);
+  if (fromEnv) {
+    return { key: fromEnv, source: "env" };
+  }
+  const config = (deps.readAdvisorJson ?? readAdvisorJsonConfig)();
+  const staged = config[TYPESAFE_KEY_CONFIG_FIELD];
+  if (typeof staged === "string") {
+    const fromConfig = normalizeKey(staged);
+    if (fromConfig) {
+      return { key: fromConfig, source: "advisor-json" };
+    }
+  }
+  return {};
+};
+var writeKeyTypeSafeKey = async (key, deps = {}) => {
+  const normalized = normalizeKey(key);
+  if (!normalized) {
+    return { message: "The key is empty.", ok: false };
+  }
+  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
+  if (!secrets) {
+    return {
+      message: `Bun.secrets is unavailable in this runtime. Set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile instead.`,
+      ok: false
+    };
+  }
+  try {
+    await secrets.set({
+      name: TYPESAFE_KEY_NAME,
+      service: TYPESAFE_KEY_SERVICE,
+      value: normalized
+    });
+    return { message: "Key stored in Bun.secrets.", ok: true };
+  } catch (error) {
+    return {
+      message: `Storing the key in Bun.secrets failed: ${messageOf(error)}. Alternatively set the ${TYPESAFE_KEY_ENV_VAR} environment variable in your shell profile.`,
+      ok: false
+    };
+  }
+};
+var clearKeyTypeSafeKey = async (deps = {}) => {
+  const secrets = deps.secrets === undefined ? runtimeSecrets() : deps.secrets;
+  if (!secrets) {
+    return {
+      message: `No Bun.secrets store is active in this runtime; pi-advisor stored nothing. Unset ${TYPESAFE_KEY_ENV_VAR} yourself if you use it.`,
+      ok: false
+    };
+  }
+  try {
+    await secrets.delete({
+      name: TYPESAFE_KEY_NAME,
+      service: TYPESAFE_KEY_SERVICE
+    });
+    return { message: "Stored key cleared.", ok: true };
+  } catch (error) {
+    return {
+      message: `Clearing the stored key failed: ${messageOf(error)}.`,
+      ok: false
+    };
+  }
+};
+var removeTypeSafeKeyFromAdvisorJson = () => {
+  try {
+    const path = join4(getAgentDir3(), "advisor.json");
+    const existing = readExistingConfig(path);
+    if (!(TYPESAFE_KEY_CONFIG_FIELD in existing)) {
+      return { message: "No plaintext key in advisor.json.", ok: true };
+    }
+    delete existing[TYPESAFE_KEY_CONFIG_FIELD];
+    writeFileSync2(path, `${JSON.stringify(existing, null, 2)}
+`);
+    resetConfigCache();
+    return { message: "Plaintext key removed from advisor.json.", ok: true };
+  } catch (error) {
+    return {
+      message: `Removing the plaintext key failed: ${messageOf(error)}.`,
+      ok: false
+    };
+  }
+};
+var warnedPlaintextKey = false;
+var consumePlaintextKeyWarning = () => {
+  if (warnedPlaintextKey) {
+    return;
+  }
+  warnedPlaintextKey = true;
+  return `Advisor is using a plaintext ${TYPESAFE_KEY_CONFIG_FIELD} from advisor.json; this is not recommended. Open /advisor-settings → Jev consultation filter to migrate it, or use the ${TYPESAFE_KEY_ENV_VAR} environment variable.`;
+};
+
+// src/jev/transport.ts
+var OPENROUTER_PROVIDER = "openrouter";
+var openRouterKey = async (ctx, deps) => {
+  const key = deps.getProviderKey ? await deps.getProviderKey(OPENROUTER_PROVIDER) : await ctx?.modelRegistry?.getApiKeyForProvider(OPENROUTER_PROVIDER);
+  return key?.trim() || undefined;
+};
+var resolveJevTransport = async (ctx, deps = {}) => {
+  const preference = advisorJevTransportRef;
+  if (preference !== "openrouter") {
+    const resolveTypesafe = deps.resolveTypesafe ?? resolveTypeSafeKey;
+    const resolution = await resolveTypesafe();
+    if (resolution.key) {
+      return {
+        apiKey: resolution.key,
+        ...resolution.source ? { source: resolution.source } : {},
+        transport: "typesafe"
+      };
+    }
+  }
+  if (preference === "typesafe") {
+    return;
+  }
+  const openrouter = await openRouterKey(ctx, deps);
+  return openrouter ? { apiKey: openrouter, transport: "openrouter" } : undefined;
+};
+
+// src/ui/masked-input.ts
 import {
   Input as Input2,
   truncateToWidth as truncateToWidth4
 } from "@earendil-works/pi-tui";
 
+class MaskedInput {
+  input;
+  options;
+  _focused = true;
+  constructor(options = {}) {
+    this.options = options;
+    this.input = new Input2({ placeholder: options.placeholder });
+    this.input.focused = true;
+    this.input.onSubmit = (value) => options.onSubmit?.(value);
+    this.input.onEscape = () => options.onEscape?.();
+  }
+  get focused() {
+    return this._focused;
+  }
+  set focused(value) {
+    this._focused = value;
+    this.input.focused = value;
+  }
+  getValue() {
+    return this.input.getValue();
+  }
+  setValue(value) {
+    this.input.setValue(value);
+  }
+  handleInput(keyData) {
+    this.input.handleInput(keyData);
+  }
+  invalidate() {
+    this.input.invalidate();
+  }
+  render(width) {
+    const value = this.input.getValue();
+    const { cursor } = this.input;
+    const masked = `${"•".repeat(Math.min(cursor, value.length))}█${"•".repeat(Math.max(0, value.length - cursor))}`;
+    const placeholder = value.length === 0 && this.options.placeholder ? this.options.placeholder : masked;
+    return [truncateToWidth4(placeholder, Math.max(1, width))];
+  }
+}
+
+// src/ui/jev-setup-submenu.ts
+var transportLabel = (credentials) => {
+  if (credentials.transport === "openrouter") {
+    return "OpenRouter (reusing pi login)";
+  }
+  switch (credentials.source) {
+    case "advisor-json":
+      return "TypeSafe (key: advisor.json — plaintext, not recommended)";
+    case "bun-secrets":
+      return "TypeSafe (key: Bun.secrets)";
+    default:
+      return "TypeSafe (key: TYPESAFE_API_KEY)";
+  }
+};
+var defaultVerify = async (credentials) => {
+  const client = new JevClient({
+    apiKey: credentials.apiKey,
+    model: advisorJevModelRef,
+    timeoutMs: advisorJevTimeoutMsRef,
+    transport: credentials.transport
+  });
+  try {
+    await client.ask({ purpose: "pi-advisor setup verification" }, { verified: noul("Answer yes.") });
+    return { ok: true };
+  } catch (error) {
+    return {
+      message: error instanceof Error ? error.message : String(error),
+      ok: false
+    };
+  }
+};
+
+class JevSetupSubmenu {
+  options;
+  deps;
+  maskedInput;
+  credentials;
+  mode = "menu";
+  notice;
+  selectedIndex = 0;
+  _focused = true;
+  constructor(options, deps = {}) {
+    this.options = options;
+    this.deps = {
+      clearStoredKey: deps.clearStoredKey ?? clearKeyTypeSafeKey,
+      hasSecretStore: deps.hasSecretStore ?? hasRuntimeSecretStore,
+      removePlaintextKey: deps.removePlaintextKey ?? removeTypeSafeKeyFromAdvisorJson,
+      resolveTransport: deps.resolveTransport ?? (() => resolveJevTransport()),
+      verify: deps.verify ?? defaultVerify,
+      writeKey: deps.writeKey ?? writeKeyTypeSafeKey
+    };
+    this.maskedInput = new MaskedInput({
+      onEscape: () => this.options.done(),
+      onSubmit: (value) => this.submitEnteredKey(value),
+      placeholder: "Paste a TypeSafe API key"
+    });
+    this.refresh().catch(() => {
+      return;
+    });
+  }
+  get focused() {
+    return this._focused;
+  }
+  set focused(value) {
+    this._focused = value;
+    this.maskedInput.focused = value;
+  }
+  invalidate() {
+    this.maskedInput.invalidate();
+  }
+  handleInput(keyData) {
+    if (this.mode === "key-entry") {
+      this.maskedInput.handleInput(keyData);
+      this.options.tui.requestRender();
+      return;
+    }
+    if (this.mode !== "menu") {
+      return;
+    }
+    const actions = this.actions();
+    if (keyData === "\x1B[B") {
+      this.selectedIndex = (this.selectedIndex + 1) % actions.length;
+    } else if (keyData === "\x1B[A") {
+      this.selectedIndex = (this.selectedIndex - 1 + actions.length) % actions.length;
+    } else if (keyData === "\r") {
+      this.activate(actions[this.selectedIndex]);
+    } else {
+      return;
+    }
+    this.options.tui.requestRender();
+  }
+  render(width) {
+    const { theme } = this.options;
+    const enabled = this.options.currentValue === "On";
+    const lines = [
+      theme.fg("accent", theme.bold("  Jev consultation filter")),
+      ""
+    ];
+    if (this.credentials) {
+      lines.push(`  Transport: ${transportLabel(this.credentials)}`);
+      lines.push(`  Filter: ${enabled ? "On" : "Off"}`);
+    } else if (this.mode === "verifying") {
+      lines.push("  Checking available Jev credentials…");
+    } else {
+      lines.push("  No Jev credentials found. Enter a TypeSafe API key below, or add");
+      lines.push("  an OpenRouter login in pi; it is reused automatically.");
+    }
+    if (this.notice) {
+      lines.push("");
+      lines.push(theme.fg("warning", `  ${this.notice}`));
+    }
+    lines.push("");
+    if (this.mode === "verifying") {
+      lines.push("  Verifying with a live Jev call…");
+    } else if (this.mode === "key-entry") {
+      lines.push(`  ${this.maskedInput.render(Math.max(10, width - 4))[0] ?? ""}`);
+      lines.push(theme.fg("dim", "  Enter: verify · Esc: cancel"));
+    } else {
+      for (const [index, label] of this.labels().entries()) {
+        const prefix = index === this.selectedIndex ? "→ " : "  ";
+        lines.push(`${prefix}${label}`);
+      }
+    }
+    return lines.map((line) => truncateToWidth5(line, width));
+  }
+  actions() {
+    if (!this.credentials) {
+      return ["enter-key", "done"];
+    }
+    const enabled = this.options.currentValue === "On";
+    const actions = [enabled ? "verify-again" : "verify-enable"];
+    actions.push("disable");
+    if (this.credentials.source === "bun-secrets") {
+      actions.push("disable-clear");
+    }
+    actions.push("done");
+    return actions;
+  }
+  actionLabels() {
+    return {
+      disable: "Disable",
+      "disable-clear": "Disable and clear stored key",
+      done: "Done",
+      "enter-key": "Enter a TypeSafe API key",
+      "verify-again": "Verify again",
+      "verify-enable": "Verify and enable"
+    };
+  }
+  labels() {
+    const labels = this.actionLabels();
+    return this.actions().map((action) => labels[action]);
+  }
+  async refresh() {
+    const wasVerifying = this.mode === "verifying";
+    this.mode = "verifying";
+    if (!wasVerifying) {
+      this.options.tui.requestRender();
+    }
+    this.credentials = await this.deps.resolveTransport?.();
+    this.mode = "menu";
+    this.selectedIndex = 0;
+    if (this.credentials?.source === "advisor-json") {
+      this.notice ??= consumePlaintextKeyWarning();
+    }
+    this.options.tui.requestRender();
+  }
+  activate(action) {
+    switch (action) {
+      case "done":
+        this.options.done();
+        return;
+      case "enter-key":
+        this.mode = "key-entry";
+        return;
+      case "disable":
+        this.notice = undefined;
+        this.options.done("Off");
+        return;
+      case "disable-clear":
+        this.disableAndClear().catch(() => {
+          return;
+        });
+        return;
+      case "verify-again":
+      case "verify-enable":
+        this.verifyAndEnable().catch(() => {
+          return;
+        });
+        return;
+      default:
+        return;
+    }
+  }
+  async disableAndClear() {
+    if (!this.deps.clearStoredKey) {
+      this.notice = "No Bun.secrets store is active; unset TYPESAFE_API_KEY yourself if you use it.";
+      this.options.tui.requestRender();
+      return;
+    }
+    const result = await this.deps.clearStoredKey();
+    this.credentials = undefined;
+    this.notice = result.message;
+    this.options.done("Off");
+  }
+  async verifyAndEnable() {
+    const { credentials } = this;
+    if (!(credentials && this.deps.verify)) {
+      return;
+    }
+    this.mode = "verifying";
+    this.notice = undefined;
+    this.options.tui.requestRender();
+    const outcome = await this.deps.verify(credentials);
+    this.mode = "menu";
+    if (!outcome.ok) {
+      this.notice = `Verification failed: ${outcome.message ?? "unknown error"}`;
+      this.options.tui.requestRender();
+      return;
+    }
+    if (credentials.transport === "typesafe" && credentials.source === "advisor-json" && this.deps.hasSecretStore?.()) {
+      const stored = await this.deps.writeKey?.(credentials.apiKey);
+      if (!stored?.ok) {
+        this.notice = stored?.message ?? "Storing the key failed; the plaintext advisor.json key keeps working.";
+        this.options.tui.requestRender();
+        return;
+      }
+      const removed = this.deps.removePlaintextKey?.();
+      this.notice = removed?.ok ? "Key moved from advisor.json into Bun.secrets." : `Stored in Bun.secrets, but ${removed?.message ?? "removing the plaintext copy failed; remove it yourself."}`;
+    }
+    this.options.done("On");
+  }
+  async submitEnteredKey(value) {
+    const key = value.trim();
+    if (!key) {
+      return;
+    }
+    if (!this.deps.verify) {
+      return;
+    }
+    this.mode = "verifying";
+    this.options.tui.requestRender();
+    const outcome = await this.deps.verify({
+      apiKey: key,
+      transport: "typesafe"
+    });
+    this.mode = "menu";
+    if (!outcome.ok) {
+      this.notice = `Verification failed: ${outcome.message ?? "unknown error"}`;
+      this.options.tui.requestRender();
+      return;
+    }
+    if (this.deps.hasSecretStore?.()) {
+      const stored = await this.deps.writeKey?.(key);
+      if (!stored?.ok) {
+        this.notice = stored?.message ?? "Storing the key failed.";
+        this.options.tui.requestRender();
+        return;
+      }
+      this.notice = "Key stored in Bun.secrets; verification succeeded.";
+      await this.refresh();
+      this.options.done("On");
+      return;
+    }
+    this.notice = "Verified. Set the key yourself in your shell profile: export TYPESAFE_API_KEY=<the key you entered> (not echoed here). Reopen this setup after setting it to enable.";
+    this.options.tui.requestRender();
+  }
+}
+
+// src/ui/text-setting-submenu.ts
+import {
+  Input as Input3,
+  truncateToWidth as truncateToWidth6
+} from "@earendil-works/pi-tui";
+
 class TextSettingSubmenu {
-  input = new Input2;
+  input = new Input3;
   options;
   _focused = true;
   error;
@@ -4549,7 +5293,7 @@ class TextSettingSubmenu {
       lines.push(theme.fg("error", `  ${this.error}`));
     }
     lines.push("", theme.fg("dim", "  Enter: apply · Esc: cancel"));
-    return lines.map((line) => truncateToWidth4(line, width));
+    return lines.map((line) => truncateToWidth6(line, width));
   }
   handleInput(keyData) {
     const before = this.input.getValue();
@@ -4569,6 +5313,13 @@ var toggle = (id, label, description, value, defaultValue) => ({
   values: TOGGLE_VALUES
 });
 var jevItems = (settings, theme, tui) => [
+  {
+    currentValue: settingValue(settings.jevFilterEnabled, false),
+    description: "Screen low-stakes ask_advisor consultations with Jev; guided setup verifies credentials.",
+    id: "jevFilter",
+    label: "Jev consultation filter",
+    submenu: (currentValue, done) => new JevSetupSubmenu({ currentValue, done, theme, tui })
+  },
   {
     currentValue: settings.jevModel ?? "jev-latest",
     description: "TypeSafe Jev model used for screening and turn-gate checks.",
@@ -4890,6 +5641,9 @@ var mutateAdvisorSettings = (settings, id, value, presets) => {
     case "gitContextMaxChars":
       settings.gitContextMaxChars = Number(value);
       break;
+    case "jevFilter":
+      settings.jevFilterEnabled = value === "On";
+      break;
     case "jevModel":
       settings.jevModel = value.trim() || "jev-latest";
       break;
@@ -4954,7 +5708,7 @@ class AdvisorSettingsSelector {
   }
   render(width) {
     const border = this.options.theme.fg("border", "─".repeat(Math.max(1, width)));
-    return [border, ...this.settingsList.render(width), border].map((line) => truncateToWidth5(line, width));
+    return [border, ...this.settingsList.render(width), border].map((line) => truncateToWidth7(line, width));
   }
   handleInput(keyData) {
     if (!this.settingsList.changeWithArrow(keyData, (id, value) => this.change(id, value))) {
@@ -5041,6 +5795,7 @@ var applyAdvisorSettings = (settings) => {
   setAlwaysOnRef(settings.alwaysOn ?? false);
   setAdvisorFailureModeRef(settings.failureMode ?? "block-session");
   setAdvisorHerdrIntegrationRef(settings.herdrIntegration ?? true);
+  setAdvisorJevFilterEnabledRef(settings.jevFilterEnabled ?? false);
   setAdvisorJevModelRef(settings.jevModel ?? DEFAULT_JEV_MODEL);
   setAdvisorJevTimeoutMsRef(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS);
@@ -5137,8 +5892,8 @@ import {
   unlink,
   writeFile
 } from "node:fs/promises";
-import { join as join4 } from "node:path";
-import { getAgentDir as getAgentDir3 } from "@earendil-works/pi-coding-agent";
+import { join as join5 } from "node:path";
+import { getAgentDir as getAgentDir4 } from "@earendil-works/pi-coding-agent";
 var ADOPTIONS = [
   "followed",
   "not-followed",
@@ -5151,11 +5906,11 @@ var VALIDATIONS = [
   "unknown"
 ];
 var MAX_LOG_BYTES = 1024 * 1024;
-var statePath = () => join4(getAgentDir3(), "advisor-outcomes-salt");
-var outcomeLogPath = () => join4(getAgentDir3(), "advisor-outcomes.jsonl");
+var statePath = () => join5(getAgentDir4(), "advisor-outcomes-salt");
+var outcomeLogPath = () => join5(getAgentDir4(), "advisor-outcomes.jsonl");
 var salt = async () => {
   const path = statePath();
-  await mkdir(getAgentDir3(), { mode: 448, recursive: true });
+  await mkdir(getAgentDir4(), { mode: 448, recursive: true });
   for (let attempt = 0;attempt < 20; attempt += 1) {
     try {
       const existing = await readFile(path);
@@ -5232,7 +5987,7 @@ var withOutcomeLock = async (run) => {
 var adviceDigest = (advice, key) => createHmac("sha256", key).update(advice).digest("hex").slice(0, 16);
 var appendOutcome = async (record) => {
   const path = outcomeLogPath();
-  await mkdir(getAgentDir3(), { mode: 448, recursive: true });
+  await mkdir(getAgentDir4(), { mode: 448, recursive: true });
   return withOutcomeLock(async () => {
     const next = {
       adoption: record.adoption,

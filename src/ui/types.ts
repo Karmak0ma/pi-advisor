@@ -70,6 +70,7 @@ export interface AdvisorSettings {
   gitContextMaxChars?: number;
   herdrIntegration?: boolean;
   jevDigestMaxChars?: number;
+  jevFilterEnabled?: boolean;
   jevModel?: string;
   jevPricePerMtok?: number;
   jevTimeoutMs?: number;

@@ -1,11 +1,13 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { advisorJevTransportRef } from "../config/state.ts";
-import { resolveTypeSafeKey } from "./key-store.ts";
+import { type JevKeySource, resolveTypeSafeKey } from "./key-store.ts";
 
 export type JevTransportKind = "typesafe" | "openrouter";
 
 export interface JevCredentials {
   apiKey: string;
+  /** Where the TypeSafe key came from; present on the typesafe transport. */
+  source?: JevKeySource;
   transport: JevTransportKind;
 }
 
@@ -39,7 +41,11 @@ export const resolveJevTransport = async (
     const resolveTypesafe = deps.resolveTypesafe ?? resolveTypeSafeKey;
     const resolution = await resolveTypesafe();
     if (resolution.key) {
-      return { apiKey: resolution.key, transport: "typesafe" };
+      return {
+        apiKey: resolution.key,
+        ...(resolution.source ? { source: resolution.source } : {}),
+        transport: "typesafe",
+      };
     }
   }
   if (preference === "typesafe") {

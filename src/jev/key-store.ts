@@ -1,6 +1,7 @@
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { readExistingConfig } from "../config/storage.ts";
+import { readExistingConfig, resetConfigCache } from "../config/storage.ts";
 import { redactSecrets } from "../redaction.ts";
 
 export type JevKeySource = "bun-secrets" | "env" | "advisor-json";
@@ -41,6 +42,9 @@ export const TYPESAFE_KEY_CONFIG_FIELD = "typesafe_api_key";
 
 const runtimeSecrets = (): JevSecretsLike | undefined =>
   (globalThis as { Bun?: { secrets?: JevSecretsLike } }).Bun?.secrets;
+
+/** Whether the current runtime offers a Bun.secrets store. */
+export const hasRuntimeSecretStore = () => runtimeSecrets() !== undefined;
 
 const normalizeKey = (value: string | null | undefined): string | undefined =>
   value?.trim() || undefined;
@@ -139,6 +143,27 @@ export const clearKeyTypeSafeKey = async (
   } catch (error) {
     return {
       message: `Clearing the stored key failed: ${messageOf(error)}.`,
+      ok: false,
+    };
+  }
+};
+
+/** Removes a hand-placed advisor.json key after a successful store migration.
+ * Unknown keys and all config settings are preserved verbatim. */
+export const removeTypeSafeKeyFromAdvisorJson = (): JevKeyStoreResult => {
+  try {
+    const path = join(getAgentDir(), "advisor.json");
+    const existing = readExistingConfig(path);
+    if (!(TYPESAFE_KEY_CONFIG_FIELD in existing)) {
+      return { message: "No plaintext key in advisor.json.", ok: true };
+    }
+    delete existing[TYPESAFE_KEY_CONFIG_FIELD];
+    writeFileSync(path, `${JSON.stringify(existing, null, 2)}\n`);
+    resetConfigCache();
+    return { message: "Plaintext key removed from advisor.json.", ok: true };
+  } catch (error) {
+    return {
+      message: `Removing the plaintext key failed: ${messageOf(error)}.`,
       ok: false,
     };
   }

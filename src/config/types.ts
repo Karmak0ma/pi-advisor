@@ -53,6 +53,7 @@ export interface AdvisorConfig {
   advisorGitContextMaxChars?: number;
   advisorHerdrIntegration?: boolean;
   advisorJevDigestMaxChars?: number;
+  advisorJevFilterEnabled?: boolean;
   advisorJevModel?: string;
   advisorJevPricePerMtok?: number;
   advisorJevTimeoutMs?: number;

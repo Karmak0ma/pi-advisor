@@ -23,6 +23,7 @@ describe("resolveJevTransport", () => {
     });
     expect(credentials).toEqual({
       apiKey: "typesafe-key",
+      source: "env",
       transport: "typesafe",
     });
   });

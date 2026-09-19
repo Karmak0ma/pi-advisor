@@ -1,6 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { SettingItem } from "@earendil-works/pi-tui";
 import { isValidAdvisorToolPolicies } from "../config/validation.ts";
+import { JevSetupSubmenu } from "./jev-setup-submenu.ts";
 import {
   contextDescription,
   currentContextLabel,
@@ -45,6 +46,15 @@ const jevItems = (
   theme: Theme,
   tui: RenderRequester
 ): SettingItem[] => [
+  {
+    currentValue: settingValue(settings.jevFilterEnabled, false),
+    description:
+      "Screen low-stakes ask_advisor consultations with Jev; guided setup verifies credentials.",
+    id: "jevFilter",
+    label: "Jev consultation filter",
+    submenu: (currentValue, done) =>
+      new JevSetupSubmenu({ currentValue, done, theme, tui }),
+  },
   {
     currentValue: settings.jevModel ?? "jev-latest",
     description: "TypeSafe Jev model used for screening and turn-gate checks.",
