@@ -14,6 +14,9 @@ import {
   setAdvisorHerdrIntegrationRef,
   setAdvisorJevDigestMaxCharsRef,
   setAdvisorJevFilterEnabledRef,
+  setAdvisorJevFilterNoulMarginRef,
+  setAdvisorJevFilterOverrideWindowRef,
+  setAdvisorJevFilterSkipConfidenceRef,
   setAdvisorJevModelRef,
   setAdvisorJevPricePerMtokRef,
   setAdvisorJevTimeoutMsRef,
@@ -39,6 +42,9 @@ import {
 import { saveConfig, saveGlobalOutcomeLogging } from "../config/storage.ts";
 import {
   DEFAULT_JEV_DIGEST_MAX_CHARS,
+  DEFAULT_JEV_FILTER_NOUL_MARGIN,
+  DEFAULT_JEV_FILTER_OVERRIDE_WINDOW,
+  DEFAULT_JEV_FILTER_SKIP_CONFIDENCE,
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
@@ -69,6 +75,15 @@ const applyAdvisorSettings = (settings: AdvisorSettings) => {
   setAdvisorFailureModeRef(settings.failureMode ?? "block-session");
   setAdvisorHerdrIntegrationRef(settings.herdrIntegration ?? true);
   setAdvisorJevFilterEnabledRef(settings.jevFilterEnabled ?? false);
+  setAdvisorJevFilterSkipConfidenceRef(
+    settings.jevFilterSkipConfidence ?? DEFAULT_JEV_FILTER_SKIP_CONFIDENCE
+  );
+  setAdvisorJevFilterNoulMarginRef(
+    settings.jevFilterNoulMargin ?? DEFAULT_JEV_FILTER_NOUL_MARGIN
+  );
+  setAdvisorJevFilterOverrideWindowRef(
+    settings.jevFilterOverrideWindow ?? DEFAULT_JEV_FILTER_OVERRIDE_WINDOW
+  );
   setAdvisorJevModelRef(settings.jevModel ?? DEFAULT_JEV_MODEL);
   setAdvisorJevTimeoutMsRef(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(

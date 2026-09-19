@@ -12,6 +12,9 @@ import {
   setAdvisorHerdrIntegrationRef,
   setAdvisorJevDigestMaxCharsRef,
   setAdvisorJevFilterEnabledRef,
+  setAdvisorJevFilterNoulMarginRef,
+  setAdvisorJevFilterOverrideWindowRef,
+  setAdvisorJevFilterSkipConfidenceRef,
   setAdvisorJevModelRef,
   setAdvisorJevPricePerMtokRef,
   setAdvisorJevTimeoutMsRef,
@@ -45,6 +48,9 @@ import {
   DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES,
   DEFAULT_CONTEXT_MAX_CHARS,
   DEFAULT_JEV_DIGEST_MAX_CHARS,
+  DEFAULT_JEV_FILTER_NOUL_MARGIN,
+  DEFAULT_JEV_FILTER_OVERRIDE_WINDOW,
+  DEFAULT_JEV_FILTER_SKIP_CONFIDENCE,
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
@@ -73,6 +79,9 @@ export const resetDefaults = () => {
   setAdvisorHerdrIntegrationRef(true);
   setAdvisorJevModelRef(DEFAULT_JEV_MODEL);
   setAdvisorJevFilterEnabledRef(false);
+  setAdvisorJevFilterSkipConfidenceRef(DEFAULT_JEV_FILTER_SKIP_CONFIDENCE);
+  setAdvisorJevFilterNoulMarginRef(DEFAULT_JEV_FILTER_NOUL_MARGIN);
+  setAdvisorJevFilterOverrideWindowRef(DEFAULT_JEV_FILTER_OVERRIDE_WINDOW);
   setAdvisorJevTimeoutMsRef(DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
@@ -170,6 +179,21 @@ export const applyConfig = (config: AdvisorConfig) => {
     config,
     "advisorJevFilterEnabled",
     setAdvisorJevFilterEnabledRef
+  );
+  applyOptionalConfig(
+    config,
+    "advisorJevFilterSkipConfidence",
+    setAdvisorJevFilterSkipConfidenceRef
+  );
+  applyOptionalConfig(
+    config,
+    "advisorJevFilterNoulMargin",
+    setAdvisorJevFilterNoulMarginRef
+  );
+  applyOptionalConfig(
+    config,
+    "advisorJevFilterOverrideWindow",
+    setAdvisorJevFilterOverrideWindowRef
   );
   applyNonEmptyStringConfig(config.advisorJevModel, setAdvisorJevModelRef);
   applyOptionalConfig(config, "advisorJevTimeoutMs", setAdvisorJevTimeoutMsRef);

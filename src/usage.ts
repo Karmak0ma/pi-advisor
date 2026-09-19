@@ -125,7 +125,7 @@ export const addAdvisorUsage = (totals: AdvisorUsageTotals, usage: unknown) => {
   }
 };
 
-const formatTokens = (value: number) => {
+export const formatTokenCount = (value: number) => {
   if (value < 1000) {
     return String(value);
   }
@@ -140,6 +140,8 @@ const formatTokens = (value: number) => {
   }
   return `${Math.round(value / 1_000_000)}M`;
 };
+
+const formatTokens = formatTokenCount;
 
 const formatCost = (value: number) => `$${value.toFixed(4)}`;
 

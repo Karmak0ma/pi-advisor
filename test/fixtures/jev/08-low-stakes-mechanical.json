@@ -1,0 +1,35 @@
+{
+  "name": "low-stakes-mechanical",
+  "expected": "skip",
+  "question": "Run the formatter on this one file?",
+  "conversation": [
+    ["user", "Refactor the persistence layer and keep tests green."]
+  ],
+  "response": {
+    "answers": {
+      "stakes": {
+        "type": "score",
+        "score": 0.1,
+        "legend": {
+          "negligible": "Negligible: routine, low-risk, mechanical, or reversible; a wrong call costs little and is easy to undo.",
+          "moderate": "Moderate: some risk or rework, but bounded and recoverable.",
+          "high": "High: material consequences for correctness, security, cost, user trust, or irreversibility."
+        },
+        "probabilities": {
+          "negligible": 0.97,
+          "moderate": 0.02,
+          "high": 0.01
+        },
+        "confidence": 0.93
+      },
+      "self_answerable": {
+        "type": "noul",
+        "noul": 0.95
+      }
+    },
+    "usage": {
+      "input_tokens": 1500,
+      "output_tokens": 0
+    }
+  }
+}

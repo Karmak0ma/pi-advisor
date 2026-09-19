@@ -71,6 +71,9 @@ export interface AdvisorSettings {
   herdrIntegration?: boolean;
   jevDigestMaxChars?: number;
   jevFilterEnabled?: boolean;
+  jevFilterNoulMargin?: number;
+  jevFilterOverrideWindow?: number;
+  jevFilterSkipConfidence?: number;
   jevModel?: string;
   jevPricePerMtok?: number;
   jevTimeoutMs?: number;

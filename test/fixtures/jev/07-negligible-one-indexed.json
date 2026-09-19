@@ -1,0 +1,35 @@
+{
+  "name": "negligible-one-indexed",
+  "expected": "skip",
+  "question": "Delete the commented-out line?",
+  "conversation": [
+    ["user", "Refactor the persistence layer and keep tests green."]
+  ],
+  "response": {
+    "answers": {
+      "stakes": {
+        "type": "score",
+        "score": 1.0,
+        "legend": {
+          "1": "Negligible: routine, low-risk, mechanical, or reversible; a wrong call costs little and is easy to undo.",
+          "2": "Moderate: some risk or rework, but bounded and recoverable.",
+          "3": "High: material consequences for correctness, security, cost, user trust, or irreversibility."
+        },
+        "probabilities": {
+          "1": 0.96,
+          "2": 0.03,
+          "3": 0.01
+        },
+        "confidence": 0.91
+      },
+      "self_answerable": {
+        "type": "noul",
+        "noul": 0.88
+      }
+    },
+    "usage": {
+      "input_tokens": 1500,
+      "output_tokens": 0
+    }
+  }
+}

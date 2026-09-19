@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendOutcome } from "../outcomes.ts";
 import type { AdvisorSessionState } from "../session-state.ts";
 import { consultAdvisor, runAdvisorGate } from "./consultation.ts";
+import { screenConsultation } from "./jev-filter.ts";
 import { registerAskAdvisorTool } from "./register-ask-advisor.ts";
 import { registerToolLifecycle } from "./register-lifecycle.ts";
 import { registerOutcomeTool } from "./register-outcome.ts";
@@ -25,6 +26,7 @@ export const registerAdvisorTool = (
     reservedCalls: new Set<string>(),
     runGate: dependencies.runGate ?? runAdvisorGate,
     scoutStatus: dependencies.statusManager ?? new ScoutStatusManager(),
+    screen: dependencies.screen ?? screenConsultation,
     session,
   };
 

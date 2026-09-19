@@ -139,6 +139,108 @@ describe("AdvisorSessionState", () => {
   });
 });
 
+describe("Jev session state", () => {
+  test("keeps the turn ordinal never-reset while turnsSinceConsultation resets", () => {
+    const state = new AdvisorSessionState();
+    state.recordCompletedTurn();
+    state.recordCompletedTurn();
+    state.resetTurnsSinceConsultation();
+    state.recordCompletedTurn();
+    expect(state.sessionTurnOrdinal).toBe(3);
+    expect(state.turnsSinceConsultation).toBe(1);
+  });
+
+  test("tracks filter ledger counts, lastSkip, and overrides", () => {
+    const state = new AdvisorSessionState();
+    state.recordCompletedTurn();
+    state.recordJevFilterAllowed();
+    state.recordJevFilterSkipped(false, "ship it?");
+    state.recordJevFilterSkipped(true, "ship it?");
+    state.recordJevFilterOverride();
+    state.recordJevFilterFailure();
+    state.recordJevFilterUsage({
+      cost: 0.001,
+      inputTokens: 20_000,
+      outputTokens: 100,
+    });
+    expect(state.lastJevSkip).toEqual({
+      normalizedQuestion: "ship it?",
+      turn: 1,
+    });
+    const summary = state.summary(undefined) ?? "";
+    expect(summary).toContain(
+      "Jev filter: 3 screened (1 allowed, 2 skipped [1 repeat]), 1 override, 1 failure"
+    );
+    expect(summary).toContain("Jev cost: ↑20k tokens · $0.0010");
+  });
+
+  test("estimates the saving from skips as an upper bound", () => {
+    const state = new AdvisorSessionState();
+    state.recordInvocation({
+      cost: 0.04,
+      executionEffect: "continued",
+      kind: "markdown",
+      model: "test/model",
+      trigger: "executor-requested",
+    });
+    state.recordJevFilterSkipped(false, "a?");
+    state.recordJevFilterSkipped(false, "b?");
+    const summary = state.summary(undefined) ?? "";
+    expect(summary).toContain("Estimated saving from skips: ≤ $0.0800");
+    expect(summary).toContain("upper bound");
+  });
+
+  test("renders the saving line as unavailable before any observed consultation", () => {
+    const state = new AdvisorSessionState();
+    state.recordJevFilterSkipped(false, "a?");
+    const summary = state.summary(undefined) ?? "";
+    expect(summary).toContain("Estimated saving from skips: unavailable");
+  });
+
+  test("renders a filter-only session summary without consultations", () => {
+    const state = new AdvisorSessionState();
+    state.recordJevFilterSkipped(false, "a?");
+    expect(state.summary(undefined)).toContain("[Session Advisor Summary]");
+    state.resetTask();
+    expect(state.summary(undefined)).toBeUndefined();
+  });
+
+  test("reattaches advice only for an exact normalized question", () => {
+    const state = new AdvisorSessionState();
+    state.issueAdvice(
+      "id",
+      "Earlier advice.",
+      "executor-requested",
+      false,
+      "ship it?"
+    );
+    expect(state.reattachedAdviceFor("ship it?")).toBe("Earlier advice.");
+    expect(state.reattachedAdviceFor("SHIP IT?")).toBeUndefined();
+    expect(state.reattachedAdviceFor(undefined)).toBeUndefined();
+  });
+
+  test("renders the turn-gate line with separated spend", () => {
+    const state = new AdvisorSessionState();
+    state.recordJevGateCheck({
+      cost: 0.0004,
+      inputTokens: 9000,
+      outputTokens: 0,
+    });
+    state.recordJevGateConsultation();
+    state.recordInvocation({
+      cost: 0.081,
+      executionEffect: "continued",
+      kind: "markdown",
+      model: "test/model",
+      trigger: "turn-gate",
+    });
+    const summary = state.summary(undefined) ?? "";
+    expect(summary).toContain(
+      "Turn gate: 1 check (Jev ↑9.0k · $0.0004), 1 consultation ($0.0810)"
+    );
+  });
+});
+
 describe("resetRepetition", () => {
   test("keeps cumulative gate interventions while clearing the signature", () => {
     const state = new AdvisorSessionState();

@@ -56,6 +56,39 @@ const jevItems = (
       new JevSetupSubmenu({ currentValue, done, theme, tui }),
   },
   {
+    currentValue: String(settings.jevFilterSkipConfidence ?? 0.85),
+    description:
+      "Required probability on negligible stakes before a consultation is skipped.",
+    id: "jevFilterSkipConfidence",
+    label: "Jev skip confidence",
+    values: numericValues(
+      settings.jevFilterSkipConfidence ?? 0.85,
+      [0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+    ),
+  },
+  {
+    currentValue: String(settings.jevFilterNoulMargin ?? 0.35),
+    description:
+      "Extra margin over a coin flip required on self-answerability before skipping.",
+    id: "jevFilterNoulMargin",
+    label: "Jev Noul margin",
+    values: numericValues(
+      settings.jevFilterNoulMargin ?? 0.35,
+      [0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45]
+    ),
+  },
+  {
+    currentValue: `${settings.jevFilterOverrideWindow ?? 10} turns`,
+    description:
+      "Turns after a skip during which the same question passes automatically.",
+    id: "jevFilterOverrideWindow",
+    label: "Jev override window",
+    values: numericValues(
+      settings.jevFilterOverrideWindow ?? 10,
+      [0, 3, 5, 10, 20, 50]
+    ).map((value) => `${value} turns`),
+  },
+  {
     currentValue: settings.jevModel ?? "jev-latest",
     description: "TypeSafe Jev model used for screening and turn-gate checks.",
     id: "jevModel",

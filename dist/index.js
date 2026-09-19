@@ -12,6 +12,9 @@ var DEFAULT_JEV_MODEL = "jev-latest";
 var DEFAULT_JEV_TIMEOUT_MS = 8000;
 var DEFAULT_JEV_DIGEST_MAX_CHARS = 4000;
 var DEFAULT_JEV_PRICE_PER_MTOK = 0.042;
+var DEFAULT_JEV_FILTER_SKIP_CONFIDENCE = 0.85;
+var DEFAULT_JEV_FILTER_NOUL_MARGIN = 0.35;
+var DEFAULT_JEV_FILTER_OVERRIDE_WINDOW = 10;
 var JEV_TRANSPORTS = [
   "auto",
   "typesafe",
@@ -51,6 +54,9 @@ var alwaysOnRef = false;
 var advisorFailureModeRef = "block-session";
 var advisorHerdrIntegrationRef = true;
 var advisorJevFilterEnabledRef = false;
+var advisorJevFilterSkipConfidenceRef = DEFAULT_JEV_FILTER_SKIP_CONFIDENCE;
+var advisorJevFilterNoulMarginRef = DEFAULT_JEV_FILTER_NOUL_MARGIN;
+var advisorJevFilterOverrideWindowRef = DEFAULT_JEV_FILTER_OVERRIDE_WINDOW;
 var advisorJevModelRef = DEFAULT_JEV_MODEL;
 var advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 var advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
@@ -137,6 +143,15 @@ var setAdvisorHerdrIntegrationRef = (enabled) => {
 var setAdvisorJevFilterEnabledRef = (enabled) => {
   advisorJevFilterEnabledRef = enabled;
 };
+var setAdvisorJevFilterSkipConfidenceRef = (value) => {
+  advisorJevFilterSkipConfidenceRef = value;
+};
+var setAdvisorJevFilterNoulMarginRef = (value) => {
+  advisorJevFilterNoulMarginRef = value;
+};
+var setAdvisorJevFilterOverrideWindowRef = (value) => {
+  advisorJevFilterOverrideWindowRef = value;
+};
 var setAdvisorJevModelRef = (model) => {
   advisorJevModelRef = model?.trim() || DEFAULT_JEV_MODEL;
 };
@@ -204,6 +219,9 @@ var getAdvisorSettings = () => ({
   herdrIntegration: advisorHerdrIntegrationRef,
   jevDigestMaxChars: advisorJevDigestMaxCharsRef,
   jevFilterEnabled: advisorJevFilterEnabledRef,
+  jevFilterNoulMargin: advisorJevFilterNoulMarginRef,
+  jevFilterOverrideWindow: advisorJevFilterOverrideWindowRef,
+  jevFilterSkipConfidence: advisorJevFilterSkipConfidenceRef,
   jevModel: advisorJevModelRef,
   jevPricePerMtok: advisorJevPricePerMtokRef,
   jevTimeoutMs: advisorJevTimeoutMsRef,
@@ -354,6 +372,8 @@ var isValidToolResultMaxBytes = (value) => nonNegativeSafeInteger(value);
 var isValidJevTimeoutMs = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 var isValidJevDigestMaxChars = (value) => nonNegativeSafeInteger(value);
 var isValidJevPricePerMtok = (value) => typeof value === "number" && Number.isFinite(value) && value > 0;
+var isValidJevSkipConfidence = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0.5 && value <= 1;
+var isValidJevNoulMargin = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 0.5;
 var isValidJevTransport = (value) => typeof value === "string" && JEV_TRANSPORTS.includes(value);
 var CONFIG_SCHEMA = {
   advisor: {
@@ -436,6 +456,27 @@ var CONFIG_SCHEMA = {
     current: () => advisorJevFilterEnabledRef,
     persisted: true,
     type: "boolean"
+  },
+  advisorJevFilterNoulMargin: {
+    accepted: "a number from 0 through 0.5",
+    current: () => advisorJevFilterNoulMarginRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevNoulMargin
+  },
+  advisorJevFilterOverrideWindow: {
+    accepted: "a non-negative safe integer",
+    current: () => advisorJevFilterOverrideWindowRef,
+    persisted: true,
+    type: "number",
+    validate: nonNegativeSafeInteger
+  },
+  advisorJevFilterSkipConfidence: {
+    accepted: "a number between 0.5 and 1 inclusive",
+    current: () => advisorJevFilterSkipConfidenceRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevSkipConfidence
   },
   advisorJevModel: {
     accepted: "a non-empty string",
@@ -714,6 +755,9 @@ var resetDefaults = () => {
   setAdvisorHerdrIntegrationRef(true);
   setAdvisorJevModelRef(DEFAULT_JEV_MODEL);
   setAdvisorJevFilterEnabledRef(false);
+  setAdvisorJevFilterSkipConfidenceRef(DEFAULT_JEV_FILTER_SKIP_CONFIDENCE);
+  setAdvisorJevFilterNoulMarginRef(DEFAULT_JEV_FILTER_NOUL_MARGIN);
+  setAdvisorJevFilterOverrideWindowRef(DEFAULT_JEV_FILTER_OVERRIDE_WINDOW);
   setAdvisorJevTimeoutMsRef(DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
@@ -766,6 +810,9 @@ var applyConfig = (config) => {
   applyOptionalConfig(config, "gateFailureMode", setAdvisorFailureModeRef);
   applyOptionalConfig(config, "advisorHerdrIntegration", setAdvisorHerdrIntegrationRef);
   applyOptionalConfig(config, "advisorJevFilterEnabled", setAdvisorJevFilterEnabledRef);
+  applyOptionalConfig(config, "advisorJevFilterSkipConfidence", setAdvisorJevFilterSkipConfidenceRef);
+  applyOptionalConfig(config, "advisorJevFilterNoulMargin", setAdvisorJevFilterNoulMarginRef);
+  applyOptionalConfig(config, "advisorJevFilterOverrideWindow", setAdvisorJevFilterOverrideWindowRef);
   applyNonEmptyStringConfig(config.advisorJevModel, setAdvisorJevModelRef);
   applyOptionalConfig(config, "advisorJevTimeoutMs", setAdvisorJevTimeoutMsRef);
   applyOptionalConfig(config, "advisorJevDigestMaxChars", setAdvisorJevDigestMaxCharsRef);
@@ -2327,7 +2374,7 @@ var addAdvisorUsage = (totals, usage) => {
     totals.costCalls += 1;
   }
 };
-var formatTokens = (value) => {
+var formatTokenCount = (value) => {
   if (value < 1000) {
     return String(value);
   }
@@ -2342,6 +2389,7 @@ var formatTokens = (value) => {
   }
   return `${Math.round(value / 1e6)}M`;
 };
+var formatTokens = formatTokenCount;
 var formatCost = (value) => `$${value.toFixed(4)}`;
 var formatUsageFields = (usage) => {
   const tokens = [
@@ -3401,6 +3449,28 @@ var normalizeToolInput = (toolName, input) => {
   return visit(input);
 };
 var normalizedToolSignature = (toolName, input) => `${toolName}:${JSON.stringify(normalizeToolInput(toolName, input))}`;
+var freshJevUsage = () => ({
+  cost: 0,
+  inputTokens: 0,
+  outputTokens: 0
+});
+var freshJevLedger = () => ({
+  filter: {
+    allowed: 0,
+    failures: 0,
+    overrides: 0,
+    repeatSkipped: 0,
+    screened: 0,
+    skipped: 0
+  },
+  gate: { checks: 0, consultations: 0, failures: 0, usage: freshJevUsage() },
+  usage: freshJevUsage()
+});
+var addJevUsage = (totals, usage) => {
+  totals.cost += usage.cost;
+  totals.inputTokens += usage.inputTokens;
+  totals.outputTokens += usage.outputTokens;
+};
 var freshRepetition = () => ({
   count: 0,
   interventions: 0
@@ -3423,12 +3493,20 @@ class AdvisorSessionState {
   #ledger = freshAdviceLedger();
   #usage = freshUsage();
   #consumedCalls = 0;
+  #jev = freshJevLedger();
+  #sessionTurnOrdinal = 0;
+  #turnsSinceConsultation = 0;
+  #lastSkip;
   resetTask() {
     this.#repetition = freshRepetition();
     this.#blockedReason = undefined;
     this.#ledger = freshAdviceLedger();
     this.#usage = freshUsage();
     this.#consumedCalls = 0;
+    this.#jev = freshJevLedger();
+    this.#sessionTurnOrdinal = 0;
+    this.#turnsSinceConsultation = 0;
+    this.#lastSkip = undefined;
   }
   clearBlocked() {
     this.#blockedReason = undefined;
@@ -3471,6 +3549,19 @@ class AdvisorSessionState {
   get consumedCalls() {
     return this.#consumedCalls;
   }
+  recordCompletedTurn() {
+    this.#sessionTurnOrdinal += 1;
+    this.#turnsSinceConsultation += 1;
+  }
+  resetTurnsSinceConsultation() {
+    this.#turnsSinceConsultation = 0;
+  }
+  get sessionTurnOrdinal() {
+    return this.#sessionTurnOrdinal;
+  }
+  get turnsSinceConsultation() {
+    return this.#turnsSinceConsultation;
+  }
   get usageTotals() {
     return { ...this.#usage.totals };
   }
@@ -3481,12 +3572,27 @@ class AdvisorSessionState {
     this.#usage.invocations.push(record);
     addAdvisorUsage(this.#usage.totals, record.usage);
   }
-  issueAdvice(id, advice, trigger, draft = false) {
-    this.#ledger.issued.set(id, { advice, trigger });
+  issueAdvice(id, advice, trigger, draft = false, normalizedQuestion) {
+    this.#ledger.issued.set(id, {
+      advice,
+      ...normalizedQuestion ? { normalizedQuestion } : {},
+      trigger
+    });
     this.#ledger.lastAdvice = advice;
     if (draft) {
       this.#ledger.draftConsultations += 1;
     }
+  }
+  reattachedAdviceFor(normalizedQuestion) {
+    if (!normalizedQuestion) {
+      return;
+    }
+    for (const entry of this.#ledger.issued.values()) {
+      if (entry.normalizedQuestion === normalizedQuestion) {
+        return entry.advice;
+      }
+    }
+    return;
   }
   claimTrackedFiles(paths) {
     const advice = this.#ledger.lastAdvice;
@@ -3548,14 +3654,103 @@ class AdvisorSessionState {
     return [
       "manual",
       "executor-requested",
+      "turn-gate",
       "repeated-tool-call",
       "completion-review",
       "custom-rule"
     ].filter((trigger) => this.#countTrigger(trigger) > 0).join(", ") || "none";
   }
+  recordJevFilterAllowed() {
+    this.#jev.filter.allowed += 1;
+    this.#jev.filter.screened += 1;
+  }
+  recordJevFilterSkipped(repeat, normalizedQuestion) {
+    this.#jev.filter.skipped += 1;
+    this.#jev.filter.screened += 1;
+    if (repeat) {
+      this.#jev.filter.repeatSkipped += 1;
+    }
+    this.#lastSkip = {
+      ...normalizedQuestion ? { normalizedQuestion } : {},
+      turn: this.#sessionTurnOrdinal
+    };
+  }
+  get lastJevSkip() {
+    return this.#lastSkip;
+  }
+  recordJevFilterOverride() {
+    this.#jev.filter.overrides += 1;
+  }
+  recordJevFilterFailure() {
+    this.#jev.filter.failures += 1;
+  }
+  recordJevFilterUsage(usage) {
+    addJevUsage(this.#jev.usage, usage);
+  }
+  recordJevGateCheck(usage) {
+    this.#jev.gate.checks += 1;
+    if (usage) {
+      addJevUsage(this.#jev.gate.usage, usage);
+    }
+  }
+  recordJevGateConsultation() {
+    this.#jev.gate.consultations += 1;
+  }
+  recordJevGateFailure() {
+    this.#jev.gate.failures += 1;
+  }
+  #jevFilterActive() {
+    const { filter } = this.#jev;
+    return filter.screened > 0 || filter.overrides > 0 || filter.failures > 0;
+  }
+  #savingsLine(markdownCosts, skipped) {
+    if (markdownCosts.length === 0) {
+      return "Estimated saving from skips: unavailable — no observed consultation cost this session";
+    }
+    const mean = markdownCosts.reduce((sum, cost) => sum + cost, 0) / markdownCosts.length;
+    return `Estimated saving from skips: ≤ $${(mean * skipped).toFixed(4)} — upper bound; assumes each skipped consultation would have cost this session's mean allowed-consultation cost ($${mean.toFixed(4)}), which the skipped calls would likely have undercut`;
+  }
+  #gateLine(gate) {
+    const consultationCosts = this.#usage.invocations.filter((item) => item.trigger === "turn-gate" && typeof item.cost === "number").map((item) => item.cost);
+    const gateSpend = consultationCosts.reduce((sum, cost) => sum + cost, 0);
+    return `Turn gate: ${gate.checks} check${gate.checks === 1 ? "" : "s"} (Jev ${this.#formatJevTokens(gate.usage)} · $${gate.usage.cost.toFixed(4)}), ${gate.consultations} consultation${gate.consultations === 1 ? "" : "s"} ($${gateSpend.toFixed(4)})`;
+  }
+  #formatJevTokens(usage) {
+    return `↑${formatTokenCount(usage.inputTokens + usage.outputTokens)}`;
+  }
+  #jevSummaryLines() {
+    const lines = [];
+    const { filter, gate, usage } = this.#jev;
+    if (this.#jevFilterActive()) {
+      lines.push(this.#filterLine(filter));
+      lines.push(`Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`);
+      if (filter.skipped > 0) {
+        lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
+      }
+    }
+    if (gate.checks > 0 || gate.consultations > 0) {
+      lines.push(this.#gateLine(gate));
+    }
+    return lines;
+  }
+  #markdownCosts() {
+    return this.#usage.invocations.filter((item) => item.kind === "markdown" && typeof item.cost === "number").map((item) => item.cost);
+  }
+  #filterLine(filter) {
+    const head = `${filter.screened} screened (${filter.allowed} allowed, ${filter.skipped} skipped${filter.repeatSkipped > 0 ? ` [${filter.repeatSkipped} repeat]` : ""})`;
+    const parts = [head];
+    if (filter.overrides > 0) {
+      parts.push(`${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`);
+    }
+    if (filter.failures > 0) {
+      parts.push(`${filter.failures} failure${filter.failures === 1 ? "" : "s"}`);
+    }
+    return `Jev filter: ${parts.join(", ")}`;
+  }
   summary(limit) {
     const { invocations, totals } = this.#usage;
-    if (invocations.length === 0 && this.#repetition.interventions === 0) {
+    const jevLines = this.#jevSummaryLines();
+    if (invocations.length === 0 && this.#repetition.interventions === 0 && jevLines.length === 0) {
       return;
     }
     const markdown = invocations.filter((item) => item.kind === "markdown");
@@ -3576,7 +3771,8 @@ class AdvisorSessionState {
       `Gate decisions: ${this.#decisionsLine()}`,
       `Loop matching: normalized tool signatures; ${this.#repetition.interventions} gate intervention${this.#repetition.interventions === 1 ? "" : "s"}`,
       `Execution effects: ${effects("tool-blocked")} tool blocked, ${effects("session-blocked")} sessions blocked, ${effects("continued")} continued`,
-      `Failures: ${failures.length ? failures.join(", ") : "none"}`
+      `Failures: ${failures.length ? failures.join(", ") : "none"}`,
+      ...jevLines
     ].join(`
 `);
   }
@@ -5321,6 +5517,27 @@ var jevItems = (settings, theme, tui) => [
     submenu: (currentValue, done) => new JevSetupSubmenu({ currentValue, done, theme, tui })
   },
   {
+    currentValue: String(settings.jevFilterSkipConfidence ?? 0.85),
+    description: "Required probability on negligible stakes before a consultation is skipped.",
+    id: "jevFilterSkipConfidence",
+    label: "Jev skip confidence",
+    values: numericValues(settings.jevFilterSkipConfidence ?? 0.85, [0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95])
+  },
+  {
+    currentValue: String(settings.jevFilterNoulMargin ?? 0.35),
+    description: "Extra margin over a coin flip required on self-answerability before skipping.",
+    id: "jevFilterNoulMargin",
+    label: "Jev Noul margin",
+    values: numericValues(settings.jevFilterNoulMargin ?? 0.35, [0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45])
+  },
+  {
+    currentValue: `${settings.jevFilterOverrideWindow ?? 10} turns`,
+    description: "Turns after a skip during which the same question passes automatically.",
+    id: "jevFilterOverrideWindow",
+    label: "Jev override window",
+    values: numericValues(settings.jevFilterOverrideWindow ?? 10, [0, 3, 5, 10, 20, 50]).map((value) => `${value} turns`)
+  },
+  {
     currentValue: settings.jevModel ?? "jev-latest",
     description: "TypeSafe Jev model used for screening and turn-gate checks.",
     id: "jevModel",
@@ -5644,6 +5861,15 @@ var mutateAdvisorSettings = (settings, id, value, presets) => {
     case "jevFilter":
       settings.jevFilterEnabled = value === "On";
       break;
+    case "jevFilterSkipConfidence":
+      settings.jevFilterSkipConfidence = Number(value);
+      break;
+    case "jevFilterNoulMargin":
+      settings.jevFilterNoulMargin = Number(value);
+      break;
+    case "jevFilterOverrideWindow":
+      settings.jevFilterOverrideWindow = Number(value.replace(" turns", ""));
+      break;
     case "jevModel":
       settings.jevModel = value.trim() || "jev-latest";
       break;
@@ -5796,6 +6022,9 @@ var applyAdvisorSettings = (settings) => {
   setAdvisorFailureModeRef(settings.failureMode ?? "block-session");
   setAdvisorHerdrIntegrationRef(settings.herdrIntegration ?? true);
   setAdvisorJevFilterEnabledRef(settings.jevFilterEnabled ?? false);
+  setAdvisorJevFilterSkipConfidenceRef(settings.jevFilterSkipConfidence ?? DEFAULT_JEV_FILTER_SKIP_CONFIDENCE);
+  setAdvisorJevFilterNoulMarginRef(settings.jevFilterNoulMargin ?? DEFAULT_JEV_FILTER_NOUL_MARGIN);
+  setAdvisorJevFilterOverrideWindowRef(settings.jevFilterOverrideWindow ?? DEFAULT_JEV_FILTER_OVERRIDE_WINDOW);
   setAdvisorJevModelRef(settings.jevModel ?? DEFAULT_JEV_MODEL);
   setAdvisorJevTimeoutMsRef(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS);
@@ -6015,6 +6244,188 @@ var appendOutcome = async (record) => {
   });
 };
 
+// src/jev/questions.ts
+var STAKES_RUBRIC = [
+  "Negligible: routine, low-risk, mechanical, or reversible; a wrong call costs little and is easy to undo.",
+  "Moderate: some risk or rework, but bounded and recoverable.",
+  "High: material consequences for correctness, security, cost, user trust, or irreversibility."
+];
+var EVIDENCE_RULE = "Judge from `executor_question` and `executor_draft` when present, otherwise from `recent_conversation`; when both are absent, `recent_conversation` is the evidence to judge from.";
+var screeningQuestions = {
+  self_answerable: {
+    criteria: {
+      false: "The executor needs the Advisor's second opinion.",
+      true: "The executor can resolve this alone with available tools and context."
+    },
+    instructions: `Can the executor confidently resolve this request alone, using available tools and context? ${EVIDENCE_RULE}`,
+    type: "noul"
+  },
+  stakes: {
+    criteria: [...STAKES_RUBRIC],
+    instructions: `How material are the stakes of the decision behind this consultation request? ${EVIDENCE_RULE}`,
+    type: "score"
+  }
+};
+var NUMERIC_KEY_PATTERN = /^\d+$/;
+var isRecord2 = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+var finiteNumber = (value) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
+var lowestStakesProbability = (answer) => {
+  if (!isRecord2(answer)) {
+    return;
+  }
+  const probabilities = isRecord2(answer.probabilities) ? answer.probabilities : {};
+  const legend = isRecord2(answer.legend) ? answer.legend : undefined;
+  if (legend) {
+    const exact = Object.keys(legend).find((key) => legend[key] === STAKES_RUBRIC[0]);
+    if (exact) {
+      return finiteNumber(probabilities[exact]);
+    }
+  }
+  const numericKeys = Object.keys(probabilities).filter((key) => NUMERIC_KEY_PATTERN.test(key));
+  if (numericKeys.length === 0) {
+    return;
+  }
+  const lowest = numericKeys.reduce((left, right) => Number(left) <= Number(right) ? left : right);
+  return finiteNumber(probabilities[lowest]);
+};
+var selfAnswerableNoul = (answer) => isRecord2(answer) ? finiteNumber(answer.noul) : undefined;
+var composeScreeningVerdict = (answers, { noulMargin, skipConfidence }) => {
+  if (!isRecord2(answers)) {
+    return { skip: false };
+  }
+  const negligibleMass = lowestStakesProbability(answers.stakes);
+  const noul = selfAnswerableNoul(answers.self_answerable);
+  if (negligibleMass === undefined || noul === undefined) {
+    return { skip: false };
+  }
+  const confidentlySelfAnswerable = noul >= 0.5 + noulMargin;
+  return {
+    skip: negligibleMass >= skipConfidence && confidentlySelfAnswerable
+  };
+};
+
+// src/jev/state.ts
+var JEV_TEXT_CAP_BYTES = 8 * 1024;
+var buildJevState = (ctx, input = {}) => {
+  const state = { role: "executor" };
+  if (input.question) {
+    state.executor_question = redactAndCapText(input.question, JEV_TEXT_CAP_BYTES, advisorRedactSecretsRef);
+  }
+  if (input.draft) {
+    state.executor_draft = redactAndCapText(input.draft, JEV_TEXT_CAP_BYTES, advisorRedactSecretsRef);
+  }
+  const digest = recentConversation(ctx, advisorJevDigestMaxCharsRef);
+  if (digest) {
+    state.recent_conversation = digest;
+  }
+  return state;
+};
+
+// src/tools/jev-filter.ts
+var normalizeScreeningQuestion = (question) => question?.trim().toLowerCase().replace(/\s+/g, " ") || undefined;
+var REATTACHED_ADVICE_CAP_BYTES = 4 * 1024;
+var SCREENED_SKIP_TEXT = "Advisor consultation skipped (screened out): the stakes are low and you can resolve this yourself with available tools and context. Proceed on your own judgment with what you already have.";
+var repeatSkipText = (advice) => `Advisor consultation skipped (already answered): this question was answered earlier in this session; the earlier advice is reattached below. Consult again only if the situation has materially changed.
+
+${advice}`;
+var lastNotifiedOutage;
+var notifyOutageOnce = (ctx, category, message) => {
+  const key = `${category}:${message}`;
+  if (key === lastNotifiedOutage) {
+    return;
+  }
+  lastNotifiedOutage = key;
+  if (ctx.hasUI) {
+    ctx.ui.notify(`Advisor Jev filter failed (${category}); allowing consultations. ${message}`, "warning");
+  }
+};
+var allow = () => ({ decision: "allow" });
+var screenConsultation = (ctx, session, options, deps = {}) => {
+  if (!advisorJevFilterEnabledRef || isSimpleMode()) {
+    return allow();
+  }
+  const normalizedQuestion = normalizeScreeningQuestion(options.question);
+  const bypass = bypassOutcome(session, options, normalizedQuestion);
+  if (bypass) {
+    return bypass;
+  }
+  const reattached = session.reattachedAdviceFor(normalizedQuestion);
+  if (reattached) {
+    session.recordJevFilterSkipped(true, normalizedQuestion);
+    return {
+      decision: "skip",
+      kind: "repeat",
+      reason: "already answered earlier in this session",
+      reattachedAdvice: reattached.slice(0, REATTACHED_ADVICE_CAP_BYTES)
+    };
+  }
+  return screenWithJev(ctx, session, options, deps, normalizedQuestion);
+};
+var bypassOutcome = (session, options, normalizedQuestion) => {
+  const lastSkip = session.lastJevSkip;
+  if (options.force) {
+    if (lastSkip?.normalizedQuestion !== undefined && lastSkip.normalizedQuestion === normalizedQuestion) {
+      session.recordJevFilterOverride();
+    }
+    return allow();
+  }
+  if (normalizedQuestion !== undefined && lastSkip?.normalizedQuestion === normalizedQuestion && session.sessionTurnOrdinal - lastSkip.turn <= advisorJevFilterOverrideWindowRef) {
+    session.recordJevFilterOverride();
+    return allow();
+  }
+  return;
+};
+var screenWithJev = async (ctx, session, options, deps, normalizedQuestion) => {
+  const credentials = await (deps.resolveTransport ?? resolveJevTransport)(ctx);
+  if (!credentials) {
+    session.recordJevFilterFailure();
+    notifyOutageOnce(ctx, "missing-key", "No Jev credentials resolved (no TypeSafe key and no OpenRouter login).");
+    return allow();
+  }
+  if (credentials.source === "advisor-json") {
+    const warning = consumePlaintextKeyWarning();
+    if (warning && ctx.hasUI) {
+      ctx.ui.notify(warning, "warning");
+    }
+  }
+  const client = new JevClient({
+    apiKey: credentials.apiKey,
+    ...deps.fetch ? { fetch: deps.fetch } : {},
+    model: advisorJevModelRef,
+    timeoutMs: advisorJevTimeoutMsRef,
+    transport: credentials.transport
+  });
+  try {
+    const result = await client.ask(buildJevState(ctx, options), screeningQuestions, options.signal);
+    session.recordJevFilterUsage(result.usage);
+    const verdict = composeScreeningVerdict(result.answers, {
+      noulMargin: advisorJevFilterNoulMarginRef,
+      skipConfidence: advisorJevFilterSkipConfidenceRef
+    });
+    if (verdict.skip) {
+      session.recordJevFilterSkipped(false, normalizedQuestion);
+      return {
+        decision: "skip",
+        kind: "screened",
+        reason: "low stakes and resolvable without a consultation"
+      };
+    }
+    session.recordJevFilterAllowed();
+    return allow();
+  } catch (error) {
+    session.recordJevFilterFailure();
+    if (error instanceof JevFailure) {
+      notifyOutageOnce(ctx, error.category, error.message);
+    } else if (options.signal?.aborted) {
+      throw error;
+    } else {
+      notifyOutageOnce(ctx, "error", error instanceof Error ? error.message : String(error));
+    }
+    return allow();
+  }
+};
+var screeningSkipText = (outcome) => outcome.kind === "repeat" && outcome.reattachedAdvice ? repeatSkipText(outcome.reattachedAdvice) : SCREENED_SKIP_TEXT;
+
 // src/tools/register-ask-advisor.ts
 import { Type } from "typebox";
 
@@ -6104,6 +6515,22 @@ var syncRenderPhase = (context, phase) => {
   }
   context.state.phase = phase;
 };
+var attachmentLabels = (details) => [
+  details?.draftBytes ? `Draft attached · ${details.draftBytes} B` : undefined,
+  details?.preferenceBytes ? `Project preferences attached · ${details.preferenceBytes} B` : undefined,
+  details?.trackedBytes ? `Tracked files attached · ${details.trackedBytes} B` : undefined,
+  details?.untrackedBytes ? `Untracked files attached · ${details.untrackedBytes} B` : undefined
+].filter((label) => label !== undefined);
+var renderJevSkipBox = (box, result, expanded, theme) => {
+  const details = advisorResultDetails(result);
+  const lines = [
+    theme.fg("dim", theme.bold("◆ ADVISOR · SKIPPED")),
+    theme.fg("dim", `  ${details?.jev?.reason ?? ""}`)
+  ];
+  box.addChild(new Text5(lines.join(`
+`), 0, 0));
+  box.addChild(new Markdown4(adviceForDisplay(textFrom(result.content), expanded), 0, 0, getMarkdownTheme4()));
+};
 var renderPartialAdvisorResult = (box, result, expanded, theme, context) => {
   const details = advisorResultDetails(result);
   if (details?.scout) {
@@ -6142,6 +6569,10 @@ var renderFinalAdvisorResult = (box, result, expanded, theme, context) => {
     context.state.timerId = undefined;
   }
   const details = advisorResultDetails(result);
+  if (details?.jev?.skipped) {
+    renderJevSkipBox(box, result, expanded, theme);
+    return;
+  }
   if (details?.scout) {
     context.state.scout = details.scout;
   }
@@ -6163,12 +6594,7 @@ var renderFinalAdvisorResult = (box, result, expanded, theme, context) => {
       lines.push(theme.fg("dim", `  Usage: ${usage}`));
     }
   }
-  const attachments = [
-    details?.draftBytes ? `Draft attached · ${details.draftBytes} B` : undefined,
-    details?.preferenceBytes ? `Project preferences attached · ${details.preferenceBytes} B` : undefined,
-    details?.trackedBytes ? `Tracked files attached · ${details.trackedBytes} B` : undefined,
-    details?.untrackedBytes ? `Untracked files attached · ${details.untrackedBytes} B` : undefined
-  ].filter(Boolean);
+  const attachments = attachmentLabels(details);
   if (attachments.length) {
     lines.push(theme.fg("dim", `  ${attachments.join(" · ")}`));
   }
@@ -6210,6 +6636,7 @@ var registerAskAdvisorTool = ({
   consult: requestAdvisor,
   pi,
   reservedCalls,
+  screen,
   session
 }) => {
   pi.registerTool({
@@ -6218,6 +6645,27 @@ var registerAskAdvisorTool = ({
       reservedCalls.delete(_id);
       if (!(isSimpleMode() || session.canConsult(getAdvisorMaxCallsPerSession()))) {
         throw new Error("Advisor call budget exhausted for this session.");
+      }
+      const normalizedQuestion = normalizeScreeningQuestion(resolveAdvisorRequest(params.question));
+      const screening = await screen(ctx, session, {
+        draft: params.draft,
+        force: params.force,
+        question: resolveAdvisorRequest(params.question),
+        signal
+      });
+      if (screening.decision === "skip") {
+        const skipText = screeningSkipText(screening);
+        return {
+          content: [{ text: skipText, type: "text" }],
+          details: {
+            jev: {
+              kind: screening.kind,
+              reason: screening.reason,
+              skipped: true
+            },
+            text: skipText
+          }
+        };
       }
       claimTrackedHandoff(session, params.includeTrackedFiles);
       if (!isSimpleMode()) {
@@ -6254,7 +6702,7 @@ var registerAskAdvisorTool = ({
           });
         }, _id);
         flushUpdate();
-        session.issueAdvice(result.adviceId, result.markdown, result.trigger, Boolean(result.draftBytes));
+        session.issueAdvice(result.adviceId, result.markdown, result.trigger, Boolean(result.draftBytes), normalizedQuestion);
         session.recordInvocation({
           cost: advisorUsageCost(result.usage),
           executionEffect: "continued",
@@ -6314,6 +6762,9 @@ ${result.markdown}`,
     parameters: Type.Object({
       draft: Type.Optional(Type.String({
         description: "Concise untrusted draft for plan or completion review; claims are not verification evidence."
+      })),
+      force: Type.Optional(Type.Boolean({
+        description: "Set true only when you judge a decision genuinely material after a consultation was screened out; bypasses screening."
       })),
       gitContext: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("summary"), Type.Literal("full")], {
         description: "How much of the working tree to include. Use full when the review depends on the exact code changes, such as a completion review. Use summary for changed file names only, or none when the question is not about the current changes. The user's configured allowance is the ceiling and a larger request is narrowed to it."
@@ -6661,6 +7112,7 @@ var registerAdvisorTool = (pi, session = advisorSessionState, dependencies = {})
     reservedCalls: new Set,
     runGate: dependencies.runGate ?? runAdvisorGate,
     scoutStatus: dependencies.statusManager ?? new ScoutStatusManager,
+    screen: dependencies.screen ?? screenConsultation,
     session
   };
   registerToolRenderers(pi);

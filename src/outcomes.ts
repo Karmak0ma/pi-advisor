@@ -15,7 +15,11 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export type OutcomeAdoption = "followed" | "not-followed" | "unknown";
 export type OutcomeValidation = "passed" | "failed" | "not-run" | "unknown";
-type OutcomeTrigger = "manual" | "executor-requested" | "repeated-tool-call";
+type OutcomeTrigger =
+  | "manual"
+  | "executor-requested"
+  | "turn-gate"
+  | "repeated-tool-call";
 export const ADOPTIONS: OutcomeAdoption[] = [
   "followed",
   "not-followed",

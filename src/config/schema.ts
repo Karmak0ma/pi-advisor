@@ -13,6 +13,9 @@ import {
   advisorHerdrIntegrationRef,
   advisorJevDigestMaxCharsRef,
   advisorJevFilterEnabledRef,
+  advisorJevFilterNoulMarginRef,
+  advisorJevFilterOverrideWindowRef,
+  advisorJevFilterSkipConfidenceRef,
   advisorJevModelRef,
   advisorJevPricePerMtokRef,
   advisorJevTimeoutMsRef,
@@ -102,6 +105,18 @@ export const isValidJevDigestMaxChars = (value: unknown): value is number =>
 
 export const isValidJevPricePerMtok = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
+
+export const isValidJevSkipConfidence = (value: unknown): value is number =>
+  typeof value === "number" &&
+  Number.isFinite(value) &&
+  value >= 0.5 &&
+  value <= 1;
+
+export const isValidJevNoulMargin = (value: unknown): value is number =>
+  typeof value === "number" &&
+  Number.isFinite(value) &&
+  value >= 0 &&
+  value <= 0.5;
 
 export const isValidJevTransport = (value: unknown): value is JevTransport =>
   typeof value === "string" && JEV_TRANSPORTS.includes(value as JevTransport);
@@ -203,6 +218,27 @@ export const CONFIG_SCHEMA = {
     current: () => advisorJevFilterEnabledRef,
     persisted: true,
     type: "boolean",
+  },
+  advisorJevFilterNoulMargin: {
+    accepted: "a number from 0 through 0.5",
+    current: () => advisorJevFilterNoulMarginRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevNoulMargin,
+  },
+  advisorJevFilterOverrideWindow: {
+    accepted: "a non-negative safe integer",
+    current: () => advisorJevFilterOverrideWindowRef,
+    persisted: true,
+    type: "number",
+    validate: nonNegativeSafeInteger,
+  },
+  advisorJevFilterSkipConfidence: {
+    accepted: "a number between 0.5 and 1 inclusive",
+    current: () => advisorJevFilterSkipConfidenceRef,
+    persisted: true,
+    type: "number",
+    validate: isValidJevSkipConfidence,
   },
   advisorJevModel: {
     accepted: "a non-empty string",

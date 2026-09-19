@@ -6,6 +6,9 @@ import {
   DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES,
   DEFAULT_CONTEXT_MAX_CHARS,
   DEFAULT_JEV_DIGEST_MAX_CHARS,
+  DEFAULT_JEV_FILTER_NOUL_MARGIN,
+  DEFAULT_JEV_FILTER_OVERRIDE_WINDOW,
+  DEFAULT_JEV_FILTER_SKIP_CONFIDENCE,
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
@@ -36,6 +39,11 @@ export let alwaysOnRef = false;
 export let advisorFailureModeRef: GateFailureMode = "block-session";
 export let advisorHerdrIntegrationRef = true;
 export let advisorJevFilterEnabledRef = false;
+export let advisorJevFilterSkipConfidenceRef =
+  DEFAULT_JEV_FILTER_SKIP_CONFIDENCE;
+export let advisorJevFilterNoulMarginRef = DEFAULT_JEV_FILTER_NOUL_MARGIN;
+export let advisorJevFilterOverrideWindowRef =
+  DEFAULT_JEV_FILTER_OVERRIDE_WINDOW;
 export let advisorJevModelRef = DEFAULT_JEV_MODEL;
 export let advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 export let advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
@@ -131,6 +139,15 @@ export const setAdvisorHerdrIntegrationRef = (enabled: boolean) => {
 export const setAdvisorJevFilterEnabledRef = (enabled: boolean) => {
   advisorJevFilterEnabledRef = enabled;
 };
+export const setAdvisorJevFilterSkipConfidenceRef = (value: number) => {
+  advisorJevFilterSkipConfidenceRef = value;
+};
+export const setAdvisorJevFilterNoulMarginRef = (value: number) => {
+  advisorJevFilterNoulMarginRef = value;
+};
+export const setAdvisorJevFilterOverrideWindowRef = (value: number) => {
+  advisorJevFilterOverrideWindowRef = value;
+};
 export const setAdvisorJevModelRef = (model: string | undefined) => {
   advisorJevModelRef = model?.trim() || DEFAULT_JEV_MODEL;
 };
@@ -203,6 +220,9 @@ export const getAdvisorSettings = () => ({
   herdrIntegration: advisorHerdrIntegrationRef,
   jevDigestMaxChars: advisorJevDigestMaxCharsRef,
   jevFilterEnabled: advisorJevFilterEnabledRef,
+  jevFilterNoulMargin: advisorJevFilterNoulMarginRef,
+  jevFilterOverrideWindow: advisorJevFilterOverrideWindowRef,
+  jevFilterSkipConfidence: advisorJevFilterSkipConfidenceRef,
   jevModel: advisorJevModelRef,
   jevPricePerMtok: advisorJevPricePerMtokRef,
   jevTimeoutMs: advisorJevTimeoutMsRef,

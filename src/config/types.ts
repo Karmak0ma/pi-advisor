@@ -15,6 +15,9 @@ export const DEFAULT_JEV_MODEL = "jev-latest";
 export const DEFAULT_JEV_TIMEOUT_MS = 8000;
 export const DEFAULT_JEV_DIGEST_MAX_CHARS = 4000;
 export const DEFAULT_JEV_PRICE_PER_MTOK = 0.042;
+export const DEFAULT_JEV_FILTER_SKIP_CONFIDENCE = 0.85;
+export const DEFAULT_JEV_FILTER_NOUL_MARGIN = 0.35;
+export const DEFAULT_JEV_FILTER_OVERRIDE_WINDOW = 10;
 export type JevTransport = "auto" | "typesafe" | "openrouter";
 export const JEV_TRANSPORTS: JevTransport[] = [
   "auto",
@@ -54,6 +57,9 @@ export interface AdvisorConfig {
   advisorHerdrIntegration?: boolean;
   advisorJevDigestMaxChars?: number;
   advisorJevFilterEnabled?: boolean;
+  advisorJevFilterNoulMargin?: number;
+  advisorJevFilterOverrideWindow?: number;
+  advisorJevFilterSkipConfidence?: number;
   advisorJevModel?: string;
   advisorJevPricePerMtok?: number;
   advisorJevTimeoutMs?: number;

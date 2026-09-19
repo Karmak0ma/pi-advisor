@@ -17,6 +17,7 @@ import {
   snapshotAdvisorUsage,
 } from "../usage.ts";
 import { notifyLocalFailure, updateAdvisorUsageStatus } from "./gate-policy.ts";
+import { normalizeScreeningQuestion, screeningSkipText } from "./jev-filter.ts";
 import { renderAdvisorResult } from "./render-advisor-result.ts";
 import {
   renderAdvisorCallBox,
@@ -52,6 +53,7 @@ export const registerAskAdvisorTool = ({
   consult: requestAdvisor,
   pi,
   reservedCalls,
+  screen,
   session,
 }: ToolRegistrationContext): void => {
   pi.registerTool({
@@ -65,6 +67,32 @@ export const registerAskAdvisorTool = ({
         !(isSimpleMode() || session.canConsult(getAdvisorMaxCallsPerSession()))
       ) {
         throw new Error("Advisor call budget exhausted for this session.");
+      }
+      // The Jev screening seam sits after the budget re-check and before the
+      // handoff claim: a skipped call consumes neither the one-shot handoff
+      // nor the budget.
+      const normalizedQuestion = normalizeScreeningQuestion(
+        resolveAdvisorRequest(params.question)
+      );
+      const screening = await screen(ctx, session, {
+        draft: params.draft,
+        force: params.force,
+        question: resolveAdvisorRequest(params.question),
+        signal,
+      });
+      if (screening.decision === "skip") {
+        const skipText = screeningSkipText(screening);
+        return {
+          content: [{ text: skipText, type: "text" }],
+          details: {
+            jev: {
+              kind: screening.kind,
+              reason: screening.reason,
+              skipped: true,
+            },
+            text: skipText,
+          },
+        };
       }
       claimTrackedHandoff(session, params.includeTrackedFiles);
       if (!isSimpleMode()) {
@@ -123,7 +151,8 @@ export const registerAskAdvisorTool = ({
           result.adviceId,
           result.markdown,
           result.trigger,
-          Boolean(result.draftBytes)
+          Boolean(result.draftBytes),
+          normalizedQuestion
         );
         session.recordInvocation({
           cost: advisorUsageCost(result.usage),
@@ -187,6 +216,12 @@ export const registerAskAdvisorTool = ({
         Type.String({
           description:
             "Concise untrusted draft for plan or completion review; claims are not verification evidence.",
+        })
+      ),
+      force: Type.Optional(
+        Type.Boolean({
+          description:
+            "Set true only when you judge a decision genuinely material after a consultation was screened out; bypasses screening.",
         })
       ),
       gitContext: Type.Optional(

@@ -1,0 +1,35 @@
+{
+  "name": "negligible-self-answerable",
+  "expected": "skip",
+  "question": "Which of these two import orders matches the style guide?",
+  "conversation": [
+    ["user", "Refactor the persistence layer and keep tests green."]
+  ],
+  "response": {
+    "answers": {
+      "stakes": {
+        "type": "score",
+        "score": 0.2,
+        "legend": {
+          "0": "Negligible: routine, low-risk, mechanical, or reversible; a wrong call costs little and is easy to undo.",
+          "1": "Moderate: some risk or rework, but bounded and recoverable.",
+          "2": "High: material consequences for correctness, security, cost, user trust, or irreversibility."
+        },
+        "probabilities": {
+          "0": 0.95,
+          "1": 0.04,
+          "2": 0.01
+        },
+        "confidence": 0.9
+      },
+      "self_answerable": {
+        "type": "noul",
+        "noul": 0.9
+      }
+    },
+    "usage": {
+      "input_tokens": 1500,
+      "output_tokens": 0
+    }
+  }
+}

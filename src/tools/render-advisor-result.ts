@@ -29,6 +29,44 @@ const syncRenderPhase = (context: AdvisorToolContext, phase: string) => {
   context.state.phase = phase;
 };
 
+const attachmentLabels = (details: AdvisorToolDetails | undefined) =>
+  [
+    details?.draftBytes
+      ? `Draft attached · ${details.draftBytes} B`
+      : undefined,
+    details?.preferenceBytes
+      ? `Project preferences attached · ${details.preferenceBytes} B`
+      : undefined,
+    details?.trackedBytes
+      ? `Tracked files attached · ${details.trackedBytes} B`
+      : undefined,
+    details?.untrackedBytes
+      ? `Untracked files attached · ${details.untrackedBytes} B`
+      : undefined,
+  ].filter((label): label is string => label !== undefined);
+
+const renderJevSkipBox = (
+  box: Box,
+  result: AgentToolResult<AdvisorToolDetails>,
+  expanded: boolean,
+  theme: Theme
+) => {
+  const details = advisorResultDetails(result);
+  const lines = [
+    theme.fg("dim", theme.bold("◆ ADVISOR · SKIPPED")),
+    theme.fg("dim", `  ${details?.jev?.reason ?? ""}`),
+  ];
+  box.addChild(new Text(lines.join("\n"), 0, 0));
+  box.addChild(
+    new Markdown(
+      adviceForDisplay(textFrom(result.content), expanded),
+      0,
+      0,
+      getMarkdownTheme()
+    )
+  );
+};
+
 const renderPartialAdvisorResult = (
   box: Box,
   result: AgentToolResult<AdvisorToolDetails>,
@@ -91,6 +129,10 @@ const renderFinalAdvisorResult = (
     context.state.timerId = undefined;
   }
   const details = advisorResultDetails(result);
+  if (details?.jev?.skipped) {
+    renderJevSkipBox(box, result, expanded, theme);
+    return;
+  }
   if (details?.scout) {
     context.state.scout = details.scout;
   }
@@ -112,20 +154,7 @@ const renderFinalAdvisorResult = (
       lines.push(theme.fg("dim", `  Usage: ${usage}`));
     }
   }
-  const attachments = [
-    details?.draftBytes
-      ? `Draft attached · ${details.draftBytes} B`
-      : undefined,
-    details?.preferenceBytes
-      ? `Project preferences attached · ${details.preferenceBytes} B`
-      : undefined,
-    details?.trackedBytes
-      ? `Tracked files attached · ${details.trackedBytes} B`
-      : undefined,
-    details?.untrackedBytes
-      ? `Untracked files attached · ${details.untrackedBytes} B`
-      : undefined,
-  ].filter(Boolean);
+  const attachments = attachmentLabels(details);
   if (attachments.length) {
     lines.push(theme.fg("dim", `  ${attachments.join(" · ")}`));
   }

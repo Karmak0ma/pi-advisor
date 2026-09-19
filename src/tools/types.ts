@@ -8,6 +8,7 @@ import type {
   GateTrigger,
 } from "../session-state.ts";
 import type { consultAdvisor, runAdvisorGate } from "./consultation.ts";
+import type { JevSkipKind, screenConsultation } from "./jev-filter.ts";
 import type { ScoutStatusManager } from "./scout-status.ts";
 
 export type {
@@ -79,6 +80,11 @@ export interface AdvisorToolDetails {
   adviceId?: string;
   advisor?: string;
   draftBytes?: number;
+  jev?: {
+    kind: JevSkipKind;
+    reason: string;
+    skipped: boolean;
+  };
   preferenceBytes?: number;
   question?: string;
   scout?: ScoutToolDetails;
@@ -108,6 +114,7 @@ export interface ToolRegistrationContext {
   reservedCalls: Set<string>;
   runGate: typeof runAdvisorGate;
   scoutStatus: ScoutStatusManager;
+  screen: typeof screenConsultation;
   session: AdvisorSessionState;
 }
 
@@ -115,5 +122,6 @@ export interface ToolRegistrationDependencies {
   appendOutcome?: typeof appendOutcome;
   consult?: typeof consultAdvisor;
   runGate?: typeof runAdvisorGate;
+  screen?: typeof screenConsultation;
   statusManager?: ScoutStatusManager;
 }

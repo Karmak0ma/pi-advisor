@@ -73,6 +73,15 @@ export const mutateAdvisorSettings = (
     case "jevFilter":
       settings.jevFilterEnabled = value === "On";
       break;
+    case "jevFilterSkipConfidence":
+      settings.jevFilterSkipConfidence = Number(value);
+      break;
+    case "jevFilterNoulMargin":
+      settings.jevFilterNoulMargin = Number(value);
+      break;
+    case "jevFilterOverrideWindow":
+      settings.jevFilterOverrideWindow = Number(value.replace(" turns", ""));
+      break;
     case "jevModel":
       settings.jevModel = value.trim() || "jev-latest";
       break;

@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
   advisorJevDigestMaxCharsRef,
+  advisorJevFilterNoulMarginRef,
+  advisorJevFilterOverrideWindowRef,
+  advisorJevFilterSkipConfidenceRef,
   advisorJevModelRef,
   advisorJevPricePerMtokRef,
   advisorJevTimeoutMsRef,
@@ -55,6 +58,11 @@ const INVALID_SETTINGS: [Record<string, unknown>, RegExp][] = [
   [{ advisorJevDigestMaxChars: -1 }, /advisorJevDigestMaxChars/],
   [{ advisorJevPricePerMtok: 0 }, /advisorJevPricePerMtok/],
   [{ advisorJevTransport: "vercel" }, /advisorJevTransport/],
+  [{ advisorJevFilterSkipConfidence: 0.4 }, /advisorJevFilterSkipConfidence/],
+  [{ advisorJevFilterSkipConfidence: 1.1 }, /advisorJevFilterSkipConfidence/],
+  [{ advisorJevFilterNoulMargin: -0.1 }, /advisorJevFilterNoulMargin/],
+  [{ advisorJevFilterNoulMargin: 0.6 }, /advisorJevFilterNoulMargin/],
+  [{ advisorJevFilterOverrideWindow: -1 }, /advisorJevFilterOverrideWindow/],
 ];
 
 const focusJevFilterRow = (selector: any) => {
@@ -77,11 +85,19 @@ describe("Jev shared settings", () => {
       expect(advisorJevDigestMaxCharsRef).toBe(4000);
       expect(advisorJevPricePerMtokRef).toBe(0.042);
       expect(advisorJevTransportRef).toBe("auto");
+      expect(advisorJevFilterSkipConfidenceRef).toBe(0.85);
+      expect(advisorJevFilterNoulMarginRef).toBe(0.35);
+      expect(advisorJevFilterOverrideWindowRef).toBe(10);
       expect(validateConfig({ advisorJevModel: "jev-1.13.0" })).toBe(true);
       expect(validateConfig({ advisorJevTimeoutMs: 5000 })).toBe(true);
       expect(validateConfig({ advisorJevDigestMaxChars: 0 })).toBe(true);
       expect(validateConfig({ advisorJevPricePerMtok: 0.042 })).toBe(true);
       expect(validateConfig({ advisorJevTransport: "openrouter" })).toBe(true);
+      expect(validateConfig({ advisorJevFilterSkipConfidence: 0.7 })).toBe(
+        true
+      );
+      expect(validateConfig({ advisorJevFilterNoulMargin: 0.4 })).toBe(true);
+      expect(validateConfig({ advisorJevFilterOverrideWindow: 5 })).toBe(true);
       for (const [invalid, pattern] of INVALID_SETTINGS) {
         expect(() => validateConfig(invalid)).toThrow(pattern);
       }
@@ -93,6 +109,9 @@ describe("Jev shared settings", () => {
       {
         advisorJevDigestMaxChars: 8000,
         advisorJevFilterEnabled: true,
+        advisorJevFilterNoulMargin: 0.4,
+        advisorJevFilterOverrideWindow: 20,
+        advisorJevFilterSkipConfidence: 0.9,
         advisorJevModel: "jev-1.13.0",
         advisorJevPricePerMtok: 0.05,
         advisorJevTimeoutMs: 15_000,
@@ -105,6 +124,9 @@ describe("Jev shared settings", () => {
         expect(advisorJevDigestMaxCharsRef).toBe(8000);
         expect(advisorJevPricePerMtokRef).toBe(0.05);
         expect(advisorJevTransportRef).toBe("openrouter");
+        expect(advisorJevFilterSkipConfidenceRef).toBe(0.9);
+        expect(advisorJevFilterNoulMarginRef).toBe(0.4);
+        expect(advisorJevFilterOverrideWindowRef).toBe(20);
 
         setAdvisorJevModelRef(undefined);
         setAdvisorJevTimeoutMsRef(30_000);
@@ -113,6 +135,9 @@ describe("Jev shared settings", () => {
         expect(savedConfig(process.env.PI_CODING_AGENT_DIR as string)).toEqual({
           advisorJevDigestMaxChars: 8000,
           advisorJevFilterEnabled: true,
+          advisorJevFilterNoulMargin: 0.4,
+          advisorJevFilterOverrideWindow: 20,
+          advisorJevFilterSkipConfidence: 0.9,
           advisorJevModel: "jev-latest",
           advisorJevPricePerMtok: 0.05,
           advisorJevTimeoutMs: 30_000,
@@ -149,6 +174,12 @@ describe("Jev shared settings", () => {
     expect(saved.at(-1)).toMatchObject({ jevDigestMaxChars: 8000 });
     changeSetting(selector, "Jev price/Mtok");
     expect(saved.at(-1)).toMatchObject({ jevPricePerMtok: 0.05 });
+    changeSetting(selector, "Jev skip confidence");
+    expect(saved.at(-1)).toMatchObject({ jevFilterSkipConfidence: 0.9 });
+    changeSetting(selector, "Jev Noul margin");
+    expect(saved.at(-1)).toMatchObject({ jevFilterNoulMargin: 0.4 });
+    changeSetting(selector, "Jev override window");
+    expect(saved.at(-1)).toMatchObject({ jevFilterOverrideWindow: 20 });
     changeSetting(selector, "Jev transport");
     expect(saved.at(-1)).toMatchObject({ jevTransport: "typesafe" });
     expect(plainScreen(selector)).toContain("typesafe");

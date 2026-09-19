@@ -4,10 +4,11 @@ import {
   emptyAdvisorUsageTotals,
   formatAdvisorUsageStatus,
   formatAdvisorUsageTotals,
+  formatTokenCount,
 } from "./usage.ts";
 
 export type GateDecision = "proceed" | "revise" | "blocked";
-export type ConsultationTrigger = "manual" | "executor-requested";
+export type ConsultationTrigger = "manual" | "executor-requested" | "turn-gate";
 export type GateTrigger =
   | "repeated-tool-call"
   | "completion-review"
@@ -119,9 +120,78 @@ interface RepetitionState {
   previousSignature?: string;
 }
 
+export interface AdvisorJevUsageTotals {
+  cost: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface AdvisorJevFilterLedger {
+  allowed: number;
+  failures: number;
+  overrides: number;
+  repeatSkipped: number;
+  screened: number;
+  skipped: number;
+}
+
+export interface AdvisorJevGateLedger {
+  checks: number;
+  consultations: number;
+  failures: number;
+  usage: AdvisorJevUsageTotals;
+}
+
+export interface AdvisorJevLedger {
+  filter: AdvisorJevFilterLedger;
+  gate: AdvisorJevGateLedger;
+  usage: AdvisorJevUsageTotals;
+}
+
+export interface AdvisorJevUsage {
+  cost: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+const freshJevUsage = (): AdvisorJevUsageTotals => ({
+  cost: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+});
+
+const freshJevLedger = (): AdvisorJevLedger => ({
+  filter: {
+    allowed: 0,
+    failures: 0,
+    overrides: 0,
+    repeatSkipped: 0,
+    screened: 0,
+    skipped: 0,
+  },
+  gate: { checks: 0, consultations: 0, failures: 0, usage: freshJevUsage() },
+  usage: freshJevUsage(),
+});
+
+export const addJevUsage = (
+  totals: AdvisorJevUsageTotals,
+  usage: AdvisorJevUsage
+) => {
+  totals.cost += usage.cost;
+  totals.inputTokens += usage.inputTokens;
+  totals.outputTokens += usage.outputTokens;
+};
+
 interface AdviceLedger {
   draftConsultations: number;
-  issued: Map<string, { advice: string; trigger: ConsultationTrigger }>;
+  issued: Map<
+    string,
+    {
+      advice: string;
+      normalizedQuestion?: string;
+      trigger: ConsultationTrigger;
+    }
+  >;
   lastAdvice?: string;
   outcomes: number;
   pending: Set<string>;
@@ -155,6 +225,10 @@ export class AdvisorSessionState {
   #ledger = freshAdviceLedger();
   #usage = freshUsage();
   #consumedCalls = 0;
+  #jev = freshJevLedger();
+  #sessionTurnOrdinal = 0;
+  #turnsSinceConsultation = 0;
+  #lastSkip: { normalizedQuestion?: string; turn: number } | undefined;
 
   resetTask() {
     this.#repetition = freshRepetition();
@@ -162,6 +236,10 @@ export class AdvisorSessionState {
     this.#ledger = freshAdviceLedger();
     this.#usage = freshUsage();
     this.#consumedCalls = 0;
+    this.#jev = freshJevLedger();
+    this.#sessionTurnOrdinal = 0;
+    this.#turnsSinceConsultation = 0;
+    this.#lastSkip = undefined;
   }
 
   clearBlocked() {
@@ -214,6 +292,26 @@ export class AdvisorSessionState {
     return this.#consumedCalls;
   }
 
+  /** Counts one completed executor turn on both turn counters. The ordinal
+   * feeds the filter override window and summary positions and is never reset
+   * by anything; turnsSinceConsultation resets on every consultation. */
+  recordCompletedTurn() {
+    this.#sessionTurnOrdinal += 1;
+    this.#turnsSinceConsultation += 1;
+  }
+
+  resetTurnsSinceConsultation() {
+    this.#turnsSinceConsultation = 0;
+  }
+
+  get sessionTurnOrdinal() {
+    return this.#sessionTurnOrdinal;
+  }
+
+  get turnsSinceConsultation() {
+    return this.#turnsSinceConsultation;
+  }
+
   /** Returns a copy of cumulative direct Advisor usage for this session. */
   get usageTotals(): AdvisorUsageTotals {
     return { ...this.#usage.totals };
@@ -232,13 +330,33 @@ export class AdvisorSessionState {
     id: string,
     advice: string,
     trigger: ConsultationTrigger,
-    draft = false
+    draft = false,
+    normalizedQuestion?: string
   ) {
-    this.#ledger.issued.set(id, { advice, trigger });
+    this.#ledger.issued.set(id, {
+      advice,
+      ...(normalizedQuestion ? { normalizedQuestion } : {}),
+      trigger,
+    });
     this.#ledger.lastAdvice = advice;
     if (draft) {
       this.#ledger.draftConsultations += 1;
     }
+  }
+
+  /** Returns earlier advice for an exactly-matching normalized question. */
+  reattachedAdviceFor(
+    normalizedQuestion: string | undefined
+  ): string | undefined {
+    if (!normalizedQuestion) {
+      return undefined;
+    }
+    for (const entry of this.#ledger.issued.values()) {
+      if (entry.normalizedQuestion === normalizedQuestion) {
+        return entry.advice;
+      }
+    }
+    return undefined;
   }
   claimTrackedFiles(paths: string[]) {
     const advice = this.#ledger.lastAdvice;
@@ -324,6 +442,7 @@ export class AdvisorSessionState {
       [
         "manual",
         "executor-requested",
+        "turn-gate",
         "repeated-tool-call",
         "completion-review",
         "custom-rule",
@@ -333,9 +452,127 @@ export class AdvisorSessionState {
     );
   }
 
+  recordJevFilterAllowed() {
+    this.#jev.filter.allowed += 1;
+    this.#jev.filter.screened += 1;
+  }
+  recordJevFilterSkipped(repeat: boolean, normalizedQuestion?: string) {
+    this.#jev.filter.skipped += 1;
+    this.#jev.filter.screened += 1;
+    if (repeat) {
+      this.#jev.filter.repeatSkipped += 1;
+    }
+    this.#lastSkip = {
+      ...(normalizedQuestion ? { normalizedQuestion } : {}),
+      turn: this.#sessionTurnOrdinal,
+    };
+  }
+  get lastJevSkip() {
+    return this.#lastSkip;
+  }
+  recordJevFilterOverride() {
+    this.#jev.filter.overrides += 1;
+  }
+  recordJevFilterFailure() {
+    this.#jev.filter.failures += 1;
+  }
+  recordJevFilterUsage(usage: AdvisorJevUsage) {
+    addJevUsage(this.#jev.usage, usage);
+  }
+
+  recordJevGateCheck(usage?: AdvisorJevUsage) {
+    this.#jev.gate.checks += 1;
+    if (usage) {
+      addJevUsage(this.#jev.gate.usage, usage);
+    }
+  }
+  recordJevGateConsultation() {
+    this.#jev.gate.consultations += 1;
+  }
+  recordJevGateFailure() {
+    this.#jev.gate.failures += 1;
+  }
+
+  #jevFilterActive() {
+    const { filter } = this.#jev;
+    return filter.screened > 0 || filter.overrides > 0 || filter.failures > 0;
+  }
+
+  #savingsLine(markdownCosts: number[], skipped: number) {
+    if (markdownCosts.length === 0) {
+      return "Estimated saving from skips: unavailable — no observed consultation cost this session";
+    }
+    const mean =
+      markdownCosts.reduce((sum, cost) => sum + cost, 0) / markdownCosts.length;
+    return `Estimated saving from skips: ≤ $${(mean * skipped).toFixed(4)} — upper bound; assumes each skipped consultation would have cost this session's mean allowed-consultation cost ($${mean.toFixed(4)}), which the skipped calls would likely have undercut`;
+  }
+
+  #gateLine(gate: AdvisorJevGateLedger) {
+    const consultationCosts = this.#usage.invocations
+      .filter(
+        (item): item is AdvisorInvocationRecord & { cost: number } =>
+          item.trigger === "turn-gate" && typeof item.cost === "number"
+      )
+      .map((item) => item.cost);
+    const gateSpend = consultationCosts.reduce((sum, cost) => sum + cost, 0);
+    return `Turn gate: ${gate.checks} check${gate.checks === 1 ? "" : "s"} (Jev ${this.#formatJevTokens(gate.usage)} · $${gate.usage.cost.toFixed(4)}), ${gate.consultations} consultation${gate.consultations === 1 ? "" : "s"} ($${gateSpend.toFixed(4)})`;
+  }
+
+  #formatJevTokens(usage: AdvisorJevUsageTotals) {
+    return `↑${formatTokenCount(usage.inputTokens + usage.outputTokens)}`;
+  }
+
+  #jevSummaryLines() {
+    const lines: string[] = [];
+    const { filter, gate, usage } = this.#jev;
+    if (this.#jevFilterActive()) {
+      lines.push(this.#filterLine(filter));
+      lines.push(
+        `Jev cost: ${this.#formatJevTokens(usage)} tokens · $${usage.cost.toFixed(4)} (input only; output free)`
+      );
+      if (filter.skipped > 0) {
+        lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
+      }
+    }
+    if (gate.checks > 0 || gate.consultations > 0) {
+      lines.push(this.#gateLine(gate));
+    }
+    return lines;
+  }
+
+  #markdownCosts(): number[] {
+    return this.#usage.invocations
+      .filter(
+        (item): item is AdvisorInvocationRecord & { cost: number } =>
+          item.kind === "markdown" && typeof item.cost === "number"
+      )
+      .map((item) => item.cost);
+  }
+
+  #filterLine(filter: AdvisorJevFilterLedger) {
+    const head = `${filter.screened} screened (${filter.allowed} allowed, ${filter.skipped} skipped${filter.repeatSkipped > 0 ? ` [${filter.repeatSkipped} repeat]` : ""})`;
+    const parts = [head];
+    if (filter.overrides > 0) {
+      parts.push(
+        `${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`
+      );
+    }
+    if (filter.failures > 0) {
+      parts.push(
+        `${filter.failures} failure${filter.failures === 1 ? "" : "s"}`
+      );
+    }
+    return `Jev filter: ${parts.join(", ")}`;
+  }
+
   summary(limit: number | undefined) {
     const { invocations, totals } = this.#usage;
-    if (invocations.length === 0 && this.#repetition.interventions === 0) {
+    const jevLines = this.#jevSummaryLines();
+    if (
+      invocations.length === 0 &&
+      this.#repetition.interventions === 0 &&
+      jevLines.length === 0
+    ) {
       return;
     }
     const markdown = invocations.filter((item) => item.kind === "markdown");
@@ -366,6 +603,7 @@ export class AdvisorSessionState {
       `Loop matching: normalized tool signatures; ${this.#repetition.interventions} gate intervention${this.#repetition.interventions === 1 ? "" : "s"}`,
       `Execution effects: ${effects("tool-blocked")} tool blocked, ${effects("session-blocked")} sessions blocked, ${effects("continued")} continued`,
       `Failures: ${failures.length ? failures.join(", ") : "none"}`,
+      ...jevLines,
     ].join("\n");
   }
 }
