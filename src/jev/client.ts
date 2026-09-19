@@ -146,7 +146,6 @@ export class JevClient {
         if (!outcome.retryable || attempt >= MAX_ATTEMPTS) {
           break;
         }
-        // biome-ignore lint/performance/noAwaitInLoops: one bounded, deadline-cancellable retry backoff.
         await this.#backoff(deadline.signal);
         if (deadline.signal.aborted) {
           break;
