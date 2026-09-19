@@ -38,4 +38,6 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all -- dist/index.js)"
           bun run package:check
           bun run bench:replay
-          bun audit --audit-level=high
+
+      - name: Audit dependencies (registry outages fail open)
+        run: bun scripts/audit.mjs
