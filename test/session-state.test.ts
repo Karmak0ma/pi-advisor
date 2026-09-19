@@ -219,6 +219,18 @@ describe("Jev session state", () => {
     expect(state.reattachedAdviceFor(undefined)).toBeUndefined();
   });
 
+  test("labels a dedup-only line without claiming Jev activity", () => {
+    const state = new AdvisorSessionState();
+    state.recordJevFilterSkipped(true, "a?");
+    state.recordJevFilterSkipped(true, "b?");
+    const summary = state.summary(undefined) ?? "";
+    expect(summary).toContain(
+      "Consultation dedup: 2 repeat questions skipped, earlier advice reattached"
+    );
+    expect(summary).not.toContain("Jev filter:");
+    expect(summary).toContain("Estimated saving from skips: unavailable");
+  });
+
   test("renders the turn-gate line with separated spend", () => {
     const state = new AdvisorSessionState();
     state.recordJevGateCheck({

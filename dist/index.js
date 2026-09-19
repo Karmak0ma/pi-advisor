@@ -3751,7 +3751,17 @@ class AdvisorSessionState {
   #jevSummaryLines() {
     const lines = [];
     const { filter, gate, usage } = this.#jev;
-    if (this.#jevFilterActive()) {
+    const nonRepeatJevActivity = filter.allowed + (filter.skipped - filter.repeatSkipped) + filter.failures;
+    if (nonRepeatJevActivity === 0 && filter.repeatSkipped > 0) {
+      const parts = [
+        `${filter.repeatSkipped} repeat question${filter.repeatSkipped === 1 ? "" : "s"} skipped, earlier advice reattached`
+      ];
+      if (filter.overrides > 0) {
+        parts.push(`${filter.overrides} override${filter.overrides === 1 ? "" : "s"}`);
+      }
+      lines.push(`Consultation dedup: ${parts.join(", ")}`);
+      lines.push(this.#savingsLine(this.#markdownCosts(), filter.skipped));
+    } else if (this.#jevFilterActive()) {
       lines.push(this.#filterLine(filter));
       const jevTokens = usage.inputTokens + usage.outputTokens;
       if (jevTokens > 0) {

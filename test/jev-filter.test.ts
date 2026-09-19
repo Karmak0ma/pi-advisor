@@ -104,7 +104,10 @@ describe("screenConsultation", () => {
       expect(outcome.reattachedAdvice).toContain("migration plan");
     }
     const summary = session.summary(undefined) ?? "";
-    expect(summary).toContain("1 skipped [1 repeat]");
+    expect(summary).toContain(
+      "Consultation dedup: 1 repeat question skipped, earlier advice reattached"
+    );
+    expect(summary).not.toContain("Jev filter:");
     expect(summary).not.toContain("Jev cost");
   });
 
@@ -283,7 +286,10 @@ describe("screenConsultation", () => {
       expect(outcome.kind).toBe("repeat");
       expect(outcome.reattachedAdvice).toContain("migration plan");
     }
-    expect(summaryLine(session)).toContain("1 skipped [1 repeat]");
+    expect(summaryLine(session)).toBe("");
+    expect(session.summary(undefined) ?? "").toContain(
+      "Consultation dedup: 1 repeat question skipped, earlier advice reattached"
+    );
   });
 
   test("force bypasses screening and counts an override after a matching skip", async () => {
