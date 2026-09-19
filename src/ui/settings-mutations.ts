@@ -1,3 +1,4 @@
+import { DEFAULT_JEV_MODEL } from "../config/types.ts";
 import type { AdvisorSettings, ContextPreset, SettingValue } from "./types.ts";
 
 const BOOLEAN_SETTING_IDS = new Set([
@@ -90,7 +91,7 @@ export const mutateAdvisorSettings = (
       settings.jevTurnGateNoulThreshold = Number(value);
       break;
     case "jevModel":
-      settings.jevModel = value.trim() || "jev-latest";
+      settings.jevModel = value.trim() || DEFAULT_JEV_MODEL;
       break;
     case "jevTimeoutMs":
       settings.jevTimeoutMs = Number(value);

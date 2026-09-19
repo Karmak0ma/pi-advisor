@@ -56,6 +56,7 @@ import {
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
+  DEFAULT_JEV_TRANSPORT,
   DEFAULT_JEV_TURN_GATE_EVERY_TURNS,
   DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD,
 } from "./types.ts";
@@ -89,7 +90,7 @@ export const resetDefaults = () => {
   setAdvisorJevTimeoutMsRef(DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
-  setAdvisorJevTransportRef("auto");
+  setAdvisorJevTransportRef(DEFAULT_JEV_TRANSPORT);
   setAdvisorJevTurnGateEveryTurnsRef(DEFAULT_JEV_TURN_GATE_EVERY_TURNS);
   setAdvisorJevTurnGateNoulThresholdRef(DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD);
   setAdvisorToolResultMaxLinesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES);

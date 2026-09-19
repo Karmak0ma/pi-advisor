@@ -17,6 +17,7 @@ var DEFAULT_JEV_FILTER_NOUL_MARGIN = 0.35;
 var DEFAULT_JEV_FILTER_OVERRIDE_WINDOW = 10;
 var DEFAULT_JEV_TURN_GATE_EVERY_TURNS = 0;
 var DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD = 0.8;
+var DEFAULT_JEV_TRANSPORT = "auto";
 var JEV_TRANSPORTS = [
   "auto",
   "typesafe",
@@ -63,7 +64,7 @@ var advisorJevModelRef = DEFAULT_JEV_MODEL;
 var advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 var advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
 var advisorJevPricePerMtokRef = DEFAULT_JEV_PRICE_PER_MTOK;
-var advisorJevTransportRef = "auto";
+var advisorJevTransportRef = DEFAULT_JEV_TRANSPORT;
 var advisorJevTurnGateEveryTurnsRef = DEFAULT_JEV_TURN_GATE_EVERY_TURNS;
 var advisorJevTurnGateNoulThresholdRef = DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD;
 var advisorToolResultMaxLinesRef = DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES;
@@ -787,7 +788,7 @@ var resetDefaults = () => {
   setAdvisorJevTimeoutMsRef(DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(DEFAULT_JEV_PRICE_PER_MTOK);
-  setAdvisorJevTransportRef("auto");
+  setAdvisorJevTransportRef(DEFAULT_JEV_TRANSPORT);
   setAdvisorJevTurnGateEveryTurnsRef(DEFAULT_JEV_TURN_GATE_EVERY_TURNS);
   setAdvisorJevTurnGateNoulThresholdRef(DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD);
   setAdvisorToolResultMaxLinesRef(DEFAULT_ADVISOR_TOOL_RESULT_MAX_LINES);
@@ -5806,61 +5807,61 @@ var jevItems = (settings, theme, tui) => [
     submenu: (currentValue, done) => new JevSetupSubmenu({ currentValue, done, theme, tui })
   },
   {
-    currentValue: String(settings.jevFilterSkipConfidence ?? 0.85),
+    currentValue: String(settings.jevFilterSkipConfidence ?? DEFAULT_JEV_FILTER_SKIP_CONFIDENCE),
     description: "Required probability on negligible stakes before a consultation is skipped.",
     id: "jevFilterSkipConfidence",
     label: "Jev skip confidence",
-    values: numericValues(settings.jevFilterSkipConfidence ?? 0.85, [0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95])
+    values: numericValues(settings.jevFilterSkipConfidence ?? DEFAULT_JEV_FILTER_SKIP_CONFIDENCE, [0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95])
   },
   {
-    currentValue: String(settings.jevFilterNoulMargin ?? 0.35),
+    currentValue: String(settings.jevFilterNoulMargin ?? DEFAULT_JEV_FILTER_NOUL_MARGIN),
     description: "Extra margin over a coin flip required on self-answerability before skipping.",
     id: "jevFilterNoulMargin",
     label: "Jev Noul margin",
-    values: numericValues(settings.jevFilterNoulMargin ?? 0.35, [0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45])
+    values: numericValues(settings.jevFilterNoulMargin ?? DEFAULT_JEV_FILTER_NOUL_MARGIN, [0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45])
   },
   {
-    currentValue: `${settings.jevFilterOverrideWindow ?? 10} turns`,
+    currentValue: `${settings.jevFilterOverrideWindow ?? DEFAULT_JEV_FILTER_OVERRIDE_WINDOW} turns`,
     description: "Turns after a skip during which the same question passes automatically.",
     id: "jevFilterOverrideWindow",
     label: "Jev override window",
-    values: numericValues(settings.jevFilterOverrideWindow ?? 10, [0, 3, 5, 10, 20, 50]).map((value) => `${value} turns`)
+    values: numericValues(settings.jevFilterOverrideWindow ?? DEFAULT_JEV_FILTER_OVERRIDE_WINDOW, [0, 3, 5, 10, 20, 50]).map((value) => `${value} turns`)
   },
   {
-    currentValue: settings.jevModel ?? "jev-latest",
+    currentValue: settings.jevModel ?? DEFAULT_JEV_MODEL,
     description: "TypeSafe Jev model used for screening and turn-gate checks.",
     id: "jevModel",
     label: "Jev model",
     submenu: (_currentValue, done) => new TextSettingSubmenu({
       description: "Enter a TypeSafe model name (for example jev-latest or jev-1.13.0).",
-      initial: settings.jevModel ?? "jev-latest",
+      initial: settings.jevModel ?? DEFAULT_JEV_MODEL,
       onCancel: done,
-      onSubmit: (value) => ({ value: value.trim() || "jev-latest" }),
+      onSubmit: (value) => ({ value: value.trim() || DEFAULT_JEV_MODEL }),
       theme,
       title: "Jev model",
       tui
     })
   },
   {
-    currentValue: String(settings.jevTimeoutMs ?? 8000),
+    currentValue: String(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS),
     description: "Total wall-time budget for one Jev call, including retries.",
     id: "jevTimeoutMs",
     label: "Jev timeout ms",
-    values: numericValues(settings.jevTimeoutMs ?? 8000, [1000, 2000, 5000, 8000, 15000, 30000])
+    values: numericValues(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS, [1000, 2000, 5000, 8000, 15000, 30000])
   },
   {
-    currentValue: String(settings.jevDigestMaxChars ?? 4000),
+    currentValue: String(settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS),
     description: "Conversation characters sent to Jev as screening evidence.",
     id: "jevDigestMaxChars",
     label: "Jev digest chars",
-    values: numericValues(settings.jevDigestMaxChars ?? 4000, [0, 1000, 2000, 4000, 8000, 15000])
+    values: numericValues(settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS, [0, 1000, 2000, 4000, 8000, 15000])
   },
   {
-    currentValue: String(settings.jevPricePerMtok ?? 0.042),
+    currentValue: String(settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK),
     description: "Assumed TypeSafe price per million input tokens for cost lines.",
     id: "jevPricePerMtok",
     label: "Jev price/Mtok",
-    values: numericValues(settings.jevPricePerMtok ?? 0.042, [0.01, 0.02, 0.042, 0.05, 0.1])
+    values: numericValues(settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK, [0.01, 0.02, 0.042, 0.05, 0.1])
   },
   {
     currentValue: settings.jevTurnGateEveryTurns === 0 || settings.jevTurnGateEveryTurns === undefined ? "Off" : `every ${settings.jevTurnGateEveryTurns} turns`,
@@ -5876,18 +5877,18 @@ var jevItems = (settings, theme, tui) => [
     ]
   },
   {
-    currentValue: String(settings.jevTurnGateNoulThreshold ?? 0.8),
+    currentValue: String(settings.jevTurnGateNoulThreshold ?? DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD),
     description: "Jev confidence required before the turn gate interrupts with advice.",
     id: "jevTurnGateNoulThreshold",
     label: "Jev turn-gate threshold",
-    values: numericValues(settings.jevTurnGateNoulThreshold ?? 0.8, [0.6, 0.7, 0.8, 0.85, 0.9, 0.95])
+    values: numericValues(settings.jevTurnGateNoulThreshold ?? DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD, [0.6, 0.7, 0.8, 0.85, 0.9, 0.95])
   },
   {
-    currentValue: settings.jevTransport ?? "auto",
+    currentValue: settings.jevTransport ?? DEFAULT_JEV_TRANSPORT,
     description: "How Jev calls travel: auto reuses an OpenRouter login when no TypeSafe key is set.",
     id: "jevTransport",
     label: "Jev transport",
-    values: withCurrentValue(settings.jevTransport ?? "auto", [
+    values: withCurrentValue(settings.jevTransport ?? DEFAULT_JEV_TRANSPORT, [
       "auto",
       "typesafe",
       "openrouter"
@@ -6186,7 +6187,7 @@ var mutateAdvisorSettings = (settings, id, value, presets) => {
       settings.jevTurnGateNoulThreshold = Number(value);
       break;
     case "jevModel":
-      settings.jevModel = value.trim() || "jev-latest";
+      settings.jevModel = value.trim() || DEFAULT_JEV_MODEL;
       break;
     case "jevTimeoutMs":
       settings.jevTimeoutMs = Number(value);
@@ -6344,9 +6345,9 @@ var applyAdvisorSettings = (settings) => {
   setAdvisorJevTimeoutMsRef(settings.jevTimeoutMs ?? DEFAULT_JEV_TIMEOUT_MS);
   setAdvisorJevDigestMaxCharsRef(settings.jevDigestMaxChars ?? DEFAULT_JEV_DIGEST_MAX_CHARS);
   setAdvisorJevPricePerMtokRef(settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK);
-  setAdvisorJevTransportRef(settings.jevTransport ?? "auto");
-  setAdvisorJevTurnGateEveryTurnsRef(settings.jevTurnGateEveryTurns ?? 0);
-  setAdvisorJevTurnGateNoulThresholdRef(settings.jevTurnGateNoulThreshold ?? 0.8);
+  setAdvisorJevTransportRef(settings.jevTransport ?? DEFAULT_JEV_TRANSPORT);
+  setAdvisorJevTurnGateEveryTurnsRef(settings.jevTurnGateEveryTurns ?? DEFAULT_JEV_TURN_GATE_EVERY_TURNS);
+  setAdvisorJevTurnGateNoulThresholdRef(settings.jevTurnGateNoulThreshold ?? DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD);
   setAdvisorToolResultMaxLinesRef(settings.toolResultMaxLines ?? 2000);
   setAdvisorToolResultMaxBytesRef(settings.toolResultMaxBytes ?? 50 * 1024);
   setAdvisorRedactSecretsRef(settings.redactSecrets ?? false);

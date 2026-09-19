@@ -21,6 +21,7 @@ export const DEFAULT_JEV_FILTER_OVERRIDE_WINDOW = 10;
 export const DEFAULT_JEV_TURN_GATE_EVERY_TURNS = 0;
 export const DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD = 0.8;
 export type JevTransport = "auto" | "typesafe" | "openrouter";
+export const DEFAULT_JEV_TRANSPORT: JevTransport = "auto";
 export const JEV_TRANSPORTS: JevTransport[] = [
   "auto",
   "typesafe",

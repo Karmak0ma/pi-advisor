@@ -12,6 +12,7 @@ import {
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
+  DEFAULT_JEV_TRANSPORT,
   DEFAULT_JEV_TURN_GATE_EVERY_TURNS,
   DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD,
   type GateFailureMode,
@@ -50,7 +51,7 @@ export let advisorJevModelRef = DEFAULT_JEV_MODEL;
 export let advisorJevTimeoutMsRef = DEFAULT_JEV_TIMEOUT_MS;
 export let advisorJevDigestMaxCharsRef = DEFAULT_JEV_DIGEST_MAX_CHARS;
 export let advisorJevPricePerMtokRef = DEFAULT_JEV_PRICE_PER_MTOK;
-export let advisorJevTransportRef: JevTransport = "auto";
+export let advisorJevTransportRef: JevTransport = DEFAULT_JEV_TRANSPORT;
 export let advisorJevTurnGateEveryTurnsRef = DEFAULT_JEV_TURN_GATE_EVERY_TURNS;
 export let advisorJevTurnGateNoulThresholdRef =
   DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD;

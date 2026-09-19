@@ -50,6 +50,9 @@ import {
   DEFAULT_JEV_MODEL,
   DEFAULT_JEV_PRICE_PER_MTOK,
   DEFAULT_JEV_TIMEOUT_MS,
+  DEFAULT_JEV_TRANSPORT,
+  DEFAULT_JEV_TURN_GATE_EVERY_TURNS,
+  DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD,
 } from "../config/types.ts";
 import type { AdvisorSettings } from "../ui/types.ts";
 
@@ -94,10 +97,12 @@ const applyAdvisorSettings = (settings: AdvisorSettings) => {
   setAdvisorJevPricePerMtokRef(
     settings.jevPricePerMtok ?? DEFAULT_JEV_PRICE_PER_MTOK
   );
-  setAdvisorJevTransportRef(settings.jevTransport ?? "auto");
-  setAdvisorJevTurnGateEveryTurnsRef(settings.jevTurnGateEveryTurns ?? 0);
+  setAdvisorJevTransportRef(settings.jevTransport ?? DEFAULT_JEV_TRANSPORT);
+  setAdvisorJevTurnGateEveryTurnsRef(
+    settings.jevTurnGateEveryTurns ?? DEFAULT_JEV_TURN_GATE_EVERY_TURNS
+  );
   setAdvisorJevTurnGateNoulThresholdRef(
-    settings.jevTurnGateNoulThreshold ?? 0.8
+    settings.jevTurnGateNoulThreshold ?? DEFAULT_JEV_TURN_GATE_NOUL_THRESHOLD
   );
   setAdvisorToolResultMaxLinesRef(settings.toolResultMaxLines ?? 2000);
   setAdvisorToolResultMaxBytesRef(settings.toolResultMaxBytes ?? 50 * 1024);
