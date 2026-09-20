@@ -105,6 +105,19 @@ export const getAvailableModelRefs = (
     .map((model) => `${model.provider}/${model.id}`);
 };
 
+export const getConfiguredModelRefs = (ctx: ExtensionContext): string[] => {
+  const registry = ctx.modelRegistry;
+  let models: readonly { id: string; provider: string }[] = [];
+  if (typeof registry?.getAll === "function") {
+    models = registry.getAll();
+  } else if (typeof registry?.getAvailable === "function") {
+    models = registry.getAvailable();
+  }
+  return Array.from(
+    new Set(models.map((model) => `${model.provider}/${model.id}`))
+  ).sort((left, right) => left.localeCompare(right));
+};
+
 const isSelectableModel = (
   ctx: ExtensionContext,
   ref: string | undefined,
