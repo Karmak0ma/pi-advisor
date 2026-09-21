@@ -107,12 +107,8 @@ export const getAvailableModelRefs = (
 
 export const getConfiguredModelRefs = (ctx: ExtensionContext): string[] => {
   const registry = ctx.modelRegistry;
-  let models: readonly { id: string; provider: string }[] = [];
-  if (typeof registry?.getAll === "function") {
-    models = registry.getAll();
-  } else if (typeof registry?.getAvailable === "function") {
-    models = registry.getAvailable();
-  }
+  const models =
+    typeof registry?.getAvailable === "function" ? registry.getAvailable() : [];
   return Array.from(
     new Set(models.map((model) => `${model.provider}/${model.id}`))
   ).sort((left, right) => left.localeCompare(right));

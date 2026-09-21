@@ -11,10 +11,14 @@ import { withAgentDir } from "./helpers/config-fixture.ts";
 import { mockPi } from "./helpers/mock-pi.ts";
 
 describe("Searchable model selector", () => {
-  test("lists every model from Pi's configured model registry", () => {
+  test("lists only models available from Pi's model registry", () => {
     const refs = getConfiguredModelRefs({
       modelRegistry: {
         getAll: () => [
+          { id: "unavailable", provider: "provider" },
+          { id: "first", provider: "provider" },
+        ],
+        getAvailable: () => [
           { id: "second", provider: "provider" },
           { id: "first", provider: "provider" },
           { id: "first", provider: "provider" },
@@ -130,6 +134,34 @@ describe("Searchable model selector", () => {
     selector.handleInput(" ");
     selector.handleInput("\r");
     expect(selected).toEqual(["anthropic/claude-sonnet-5"]);
+  });
+
+  test("applies selected models when the current search has no matches", () => {
+    let selected: string[] | undefined;
+    const selector = new SearchableModelMultiSelector({
+      allOptions: ["provider/alpha", "provider/beta"],
+      currentOptions: [],
+      keybindings,
+      multiSelect: true,
+      onCancel: () => undefined,
+      onSelect: (values) => {
+        selected = values;
+      },
+      theme,
+      title: "Advisor model whitelist",
+      tui: { requestRender: () => undefined },
+    });
+
+    selector.handleInput(" ");
+    for (const character of "no-match") {
+      selector.handleInput(character);
+    }
+    expect(selector.render(100).join("\n")).toContain(
+      "No matching models found."
+    );
+    selector.handleInput("\r");
+
+    expect(selected).toEqual(["provider/alpha"]);
   });
 
   test("keeps the current model when Enter is pressed immediately", () => {

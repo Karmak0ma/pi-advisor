@@ -8,17 +8,22 @@ import {
   type KeybindingsManager,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
-import type {
-  SearchableModelMultiSelectorOptions,
-  SearchableModelSelectorOptions,
-} from "./types.ts";
+import type { RenderRequester } from "./types.ts";
 
-type ModelSelectorOptions =
-  | SearchableModelSelectorOptions
-  | SearchableModelMultiSelectorOptions;
+interface SearchableModelListOptions {
+  allOptions: string[];
+  currentOptions: string[];
+  keybindings: KeybindingsManager;
+  multiSelect: boolean;
+  onCancel: () => void;
+  onSelect: (values: string[]) => void;
+  theme: Theme;
+  title: string;
+  tui: RenderRequester;
+}
 
 export class SearchableModelList implements Component, Focusable {
-  private readonly tui: SearchableModelSelectorOptions["tui"];
+  private readonly tui: RenderRequester;
   private readonly searchInput: Input;
   private readonly allOptions: string[];
   private readonly currentOption: string | undefined;
@@ -27,7 +32,7 @@ export class SearchableModelList implements Component, Focusable {
   private filteredOptions: string[];
   private selectedIndex = 0;
   private readonly title: string;
-  private readonly onSelect: (value: string | string[]) => void;
+  private readonly onSelect: (values: string[]) => void;
   private readonly onCancel: () => void;
   private readonly theme: Theme;
   private readonly keybindings: KeybindingsManager;
@@ -41,16 +46,16 @@ export class SearchableModelList implements Component, Focusable {
     this.searchInput.focused = val;
   }
 
-  constructor(options: ModelSelectorOptions) {
-    this.multiSelect = options.multiSelect === true;
+  constructor(options: SearchableModelListOptions) {
+    this.multiSelect = options.multiSelect;
     this.tui = options.tui;
     this.title = options.title;
+    const [requestedCurrentOption] = options.currentOptions;
     this.currentOption =
       !this.multiSelect &&
-      "currentOption" in options &&
-      options.currentOption &&
-      options.allOptions.includes(options.currentOption)
-        ? options.currentOption
+      requestedCurrentOption &&
+      options.allOptions.includes(requestedCurrentOption)
+        ? requestedCurrentOption
         : undefined;
     let allOptions: string[];
     if (this.multiSelect) {
@@ -67,8 +72,7 @@ export class SearchableModelList implements Component, Focusable {
     }
     this.allOptions = allOptions;
     if (this.multiSelect) {
-      for (const value of (options as SearchableModelMultiSelectorOptions)
-        .currentOptions) {
+      for (const value of options.currentOptions) {
         if (this.allOptions.includes(value)) {
           this.selected.add(value);
         }
@@ -76,7 +80,7 @@ export class SearchableModelList implements Component, Focusable {
     }
     this.theme = options.theme;
     this.keybindings = options.keybindings;
-    this.onSelect = options.onSelect as (value: string | string[]) => void;
+    this.onSelect = options.onSelect;
     this.onCancel = options.onCancel;
     this.searchInput = new Input();
     this.filteredOptions = this.allOptions;
@@ -158,13 +162,14 @@ export class SearchableModelList implements Component, Focusable {
       this.matchesAction(keyData, "tui.select.confirm", "\n") ||
       keyData === "\r"
     ) {
-      if (this.filteredOptions.length > 0) {
-        if (this.multiSelect) {
-          this.onSelect(
-            this.allOptions.filter((item) => this.selected.has(item))
-          );
-        } else {
-          this.onSelect(this.filteredOptions[this.selectedIndex]);
+      if (this.multiSelect) {
+        this.onSelect(
+          this.allOptions.filter((item) => this.selected.has(item))
+        );
+      } else {
+        const selectedOption = this.filteredOptions[this.selectedIndex];
+        if (selectedOption !== undefined) {
+          this.onSelect([selectedOption]);
         }
       }
       return;

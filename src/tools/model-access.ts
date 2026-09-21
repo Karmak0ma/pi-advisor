@@ -1,7 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { advisorModelWhitelistRef } from "../config/state.ts";
 
-export const currentModelRef = (
+type AdvisorModelAccess =
+  | { allowed: true; modelRef?: string }
+  | { allowed: false; modelRef?: string; reason: string };
+
+const currentModelRef = (
   ctx: Pick<ExtensionContext, "model">
 ): string | undefined => {
   const { model } = ctx;
@@ -10,7 +14,7 @@ export const currentModelRef = (
 
 export const advisorModelAccess = (
   ctx: Pick<ExtensionContext, "model">
-): { allowed: boolean; modelRef?: string; reason?: string } => {
+): AdvisorModelAccess => {
   const modelRef = currentModelRef(ctx);
   if (advisorModelWhitelistRef.length === 0) {
     return { allowed: true, ...(modelRef ? { modelRef } : {}) };
@@ -32,4 +36,7 @@ export const advisorModelIsAllowed = (
 
 export const advisorModelAccessReason = (
   ctx: Pick<ExtensionContext, "model">
-): string | undefined => advisorModelAccess(ctx).reason;
+): string | undefined => {
+  const access = advisorModelAccess(ctx);
+  return access.allowed ? undefined : access.reason;
+};

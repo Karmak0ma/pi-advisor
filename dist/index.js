@@ -1076,12 +1076,7 @@ var getAvailableModelRefs = (ctx) => {
 };
 var getConfiguredModelRefs = (ctx) => {
   const registry = ctx.modelRegistry;
-  let models = [];
-  if (typeof registry?.getAll === "function") {
-    models = registry.getAll();
-  } else if (typeof registry?.getAvailable === "function") {
-    models = registry.getAvailable();
-  }
+  const models = typeof registry?.getAvailable === "function" ? registry.getAvailable() : [];
   return Array.from(new Set(models.map((model) => `${model.provider}/${model.id}`))).sort((left, right) => left.localeCompare(right));
 };
 var isSelectableModel = (ctx, ref, availableRefs) => {
@@ -1148,10 +1143,11 @@ class SearchableModelList {
     this.searchInput.focused = val;
   }
   constructor(options) {
-    this.multiSelect = options.multiSelect === true;
+    this.multiSelect = options.multiSelect;
     this.tui = options.tui;
     this.title = options.title;
-    this.currentOption = !this.multiSelect && "currentOption" in options && options.currentOption && options.allOptions.includes(options.currentOption) ? options.currentOption : undefined;
+    const [requestedCurrentOption] = options.currentOptions;
+    this.currentOption = !this.multiSelect && requestedCurrentOption && options.allOptions.includes(requestedCurrentOption) ? requestedCurrentOption : undefined;
     let allOptions;
     if (this.multiSelect) {
       allOptions = [...new Set(options.allOptions)].sort((left, right) => left.localeCompare(right));
@@ -1232,11 +1228,12 @@ class SearchableModelList {
     }
     if (this.matchesAction(keyData, "tui.select.confirm", `
 `) || keyData === "\r") {
-      if (this.filteredOptions.length > 0) {
-        if (this.multiSelect) {
-          this.onSelect(this.allOptions.filter((item) => this.selected.has(item)));
-        } else {
-          this.onSelect(this.filteredOptions[this.selectedIndex]);
+      if (this.multiSelect) {
+        this.onSelect(this.allOptions.filter((item) => this.selected.has(item)));
+      } else {
+        const selectedOption = this.filteredOptions[this.selectedIndex];
+        if (selectedOption !== undefined) {
+          this.onSelect([selectedOption]);
         }
       }
       return;
@@ -1306,7 +1303,16 @@ class ModelSelectorAdapter {
 
 class SearchableModelSelector extends ModelSelectorAdapter {
   constructor(options) {
-    super(new SearchableModelList(options));
+    super(new SearchableModelList({
+      ...options,
+      currentOptions: options.currentOption ? [options.currentOption] : [],
+      multiSelect: false,
+      onSelect: ([value]) => {
+        if (value !== undefined) {
+          options.onSelect(value);
+        }
+      }
+    }));
   }
 }
 
@@ -3164,7 +3170,10 @@ var advisorModelAccess = (ctx) => {
   };
 };
 var advisorModelIsAllowed = (ctx) => advisorModelAccess(ctx).allowed;
-var advisorModelAccessReason = (ctx) => advisorModelAccess(ctx).reason;
+var advisorModelAccessReason = (ctx) => {
+  const access = advisorModelAccess(ctx);
+  return access.allowed ? undefined : access.reason;
+};
 
 // src/tools/consultation.ts
 class AdvisorNoAdviceError extends Error {
@@ -5561,6 +5570,11 @@ var rainbowGradient = (text, startedAt) => {
   }).join("").concat("\x1B[0m");
 };
 
+// src/ui/settings-items.ts
+import {
+  getKeybindings
+} from "@earendil-works/pi-tui";
+
 // src/ui/jev-setup-submenu.ts
 import {
   Key as Key2,
@@ -6091,7 +6105,7 @@ var advisorModelWhitelistItem = (settings, modelRefs, keybindings, theme, tui) =
       ...new Set([...modelRefs ?? [], ...settings.modelWhitelist ?? []])
     ],
     currentOptions: settings.modelWhitelist ?? [],
-    keybindings: keybindings ?? { matches: () => false },
+    keybindings: keybindings ?? getKeybindings(),
     multiSelect: true,
     onCancel: done,
     onSelect: (values) => done(values.join(",")),
@@ -7367,7 +7381,7 @@ var modelAccessBlock = (toolName, ctx) => {
   }
   return {
     block: true,
-    reason: advisorModelAccessReason(ctx) ?? "Advisor model is not allowed."
+    reason: access.reason
   };
 };
 var registerToolLifecycle = ({

@@ -1,5 +1,9 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { KeybindingsManager, SettingItem } from "@earendil-works/pi-tui";
+import {
+  getKeybindings,
+  type KeybindingsManager,
+  type SettingItem,
+} from "@earendil-works/pi-tui";
 import {
   DEFAULT_JEV_DIGEST_MAX_CHARS,
   DEFAULT_JEV_FILTER_NOUL_MARGIN,
@@ -222,7 +226,7 @@ export const advisorModelWhitelistItem = (
         ...new Set([...(modelRefs ?? []), ...(settings.modelWhitelist ?? [])]),
       ],
       currentOptions: settings.modelWhitelist ?? [],
-      keybindings: keybindings ?? ({ matches: () => false } as never),
+      keybindings: keybindings ?? getKeybindings(),
       multiSelect: true,
       onCancel: done,
       onSelect: (values) => done(values.join(",")),

@@ -7,10 +7,7 @@ import { loadConfig } from "../config/storage.ts";
 import { herdrAdvisorBlock } from "../herdr.ts";
 import { reserveAdvisorCall } from "./gate-policy.ts";
 import { handleAutomaticGate } from "./loop-gate.ts";
-import {
-  advisorModelAccess,
-  advisorModelAccessReason,
-} from "./model-access.ts";
+import { advisorModelAccess } from "./model-access.ts";
 import { advisorInvocationGuidelines } from "./prompts.ts";
 import type { ToolRegistrationContext } from "./types.ts";
 
@@ -24,7 +21,7 @@ const modelAccessBlock = (
   }
   return {
     block: true,
-    reason: advisorModelAccessReason(ctx) ?? "Advisor model is not allowed.",
+    reason: access.reason,
   };
 };
 
